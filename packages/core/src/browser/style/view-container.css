@@ -26,12 +26,12 @@
 
 .theia-view-container .reflex-container > .reflex-splitter.active,
 .theia-view-container .reflex-container > .reflex-splitter:hover {
-  background-color: var(--theia-border-color1);
-  transition: all 1s ease;
+    background-color: var(--theia-menu-color0);
+    transition: all 1s ease;
 }
 
 .theia-view-container .reflex-container > .reflex-splitter {
-    background-color: var(--theia-layout-color0);
+    background-color: var(--theia-menu-color0);
 }
 
 .theia-view-container .horizontal > .reflex-splitter {
@@ -45,10 +45,7 @@
   border-top: none;
 }
 
-.theia-view-container .pane-content {
-    text-align: center;
-    position: relative;
-    user-select: none;
+.theia-view-container .root {
     height: 100%;
 }
 
@@ -79,7 +76,6 @@
     display: block;
 }
 
-.theia-view-container-part .body {
-    /* height: 100%;
-    display: block; */
+.theia-view-container-part:hover .body {
+    display: block;
 }

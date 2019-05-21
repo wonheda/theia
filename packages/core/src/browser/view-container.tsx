@@ -16,8 +16,8 @@
 
 import { interfaces } from 'inversify';
 import * as React from 'react';
-import { ReflexContainer, ReflexSplitter, ReflexElement, ReflexElementProps } from 'react-reflex';
 import 'react-reflex/styles.css';
+import { ReflexContainer, ReflexSplitter, ReflexElement, ReflexElementProps } from 'react-reflex';
 import { ReactWidget, Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message } from './widgets';
 import { Disposable } from '../common/disposable';
 import { ContextMenuRenderer } from './context-menu-renderer';
@@ -136,6 +136,8 @@ export namespace ViewContainer {
 
 export class ViewContainerComponent extends React.Component<ViewContainerComponent.Props, ViewContainerComponent.State> {
 
+    protected container: HTMLElement | null;
+
     constructor(props: Readonly<ViewContainerComponent.Props>) {
         super(props);
         const widgets: Array<{ widget: Widget } & ReflexElementProps> = [];
@@ -152,19 +154,26 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
         };
     }
 
+    componentDidMount() {
+        if (this.container) {
+            const { clientHeight: height, clientWidth: width } = this.container;
+            this.setState({
+                dimensions: { height, width }
+            });
+        }
+    }
+
     public render() {
         const nodes: React.ReactNode[] = [];
-        for (const { widget } of this.state.widgets) {
-            const { id } = widget;
+        for (const widget of this.state.widgets) {
+            const { id } = widget.widget;
             if (nodes.length !== 0) {
-                nodes.push(<ReflexSplitter className={'splitter'} key={`splitter-${id}`} propagate={true} />);
+                nodes.push(<ReflexSplitter key={`splitter-${id}`} propagate={true} />);
             }
-            nodes.push(<ViewContainerPart key={id} widget={widget} {...widget} />);
+            nodes.push(<ViewContainerPart key={id} widget={widget.widget} {...widget} />);
         }
-        return <div className='foo-bar-baz'>
-            <ReflexContainer orientation='horizontal'>
-                {nodes}
-            </ReflexContainer>
+        return <div className={ViewContainerComponent.Styles.ROOT} ref={(element => this.container = element)}>
+            {this.state.dimensions ? <ReflexContainer orientation='horizontal'>{nodes}</ReflexContainer> : ''}
         </div>;
     }
 
@@ -174,9 +183,12 @@ export namespace ViewContainerComponent {
         widgets: Widget[];
         services: ViewContainer.Services;
     }
-
     export interface State {
+        dimensions?: { height: number, width: number }
         widgets: Array<{ widget: Widget } & ReflexElementProps>
+    }
+    export namespace Styles {
+        export const ROOT = 'root';
     }
 }
 
@@ -206,8 +218,8 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
             toggleClassNames.push(COLLAPSED_CLASS);
         }
         const toggleClassName = toggleClassNames.join(' ');
-        return <ReflexElement size={this.state.size} {...this.props} minSize={22}>
-            <div className={`pane-content ${ViewContainerPart.Styles.VIEW_CONTAINER_PART_CLASS}`}>
+        return <ReflexElement size={this.state.size} {...this.props}>
+            <div className={ViewContainerPart.Styles.VIEW_CONTAINER_PART_CLASS}>
                 <div className={`theia-header ${ViewContainerPart.Styles.HEAD}`}
                     title={widget.title.caption}
                     onClick={this.toggle}
@@ -296,7 +308,7 @@ export namespace ViewContainerPart {
     }
     export interface State {
         expanded: boolean;
-        size: -1;
+        size: number;
     }
     export namespace Styles {
         export const VIEW_CONTAINER_PART_CLASS = 'theia-view-container-part';
