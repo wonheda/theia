@@ -146,7 +146,7 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
             widgets.push({
                 widget,
                 direction: i === 0 ? 1 : i === props.widgets.length - 1 ? -1 : [1, -1],
-                minSize: 30
+                minSize: 50
             });
         }
         this.state = {
@@ -163,6 +163,17 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
         }
     }
 
+    protected onExpandedChange = (widget: Widget, expanded: boolean) => {
+        const { widgets } = this.state;
+        const index = widgets.findIndex(part => part.widget.id === widget.id);
+        if (index !== -1) {
+            widgets[index].minSize = expanded ? 50 : 22;
+            this.setState({
+                widgets
+            });
+        }
+    }
+
     public render() {
         const nodes: React.ReactNode[] = [];
         for (const widget of this.state.widgets) {
@@ -170,7 +181,7 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
             if (nodes.length !== 0) {
                 nodes.push(<ReflexSplitter key={`splitter-${id}`} propagate={true} />);
             }
-            nodes.push(<ViewContainerPart key={id} widget={widget.widget} {...widget} />);
+            nodes.push(<ViewContainerPart key={id} widget={widget.widget} {...widget} onExpandedChange={this.onExpandedChange} />);
         }
         return <div className={ViewContainerComponent.Styles.ROOT} ref={(element => this.container = element)}>
             {this.state.dimensions ? <ReflexContainer orientation='horizontal'>{nodes}</ReflexContainer> : ''}
@@ -218,9 +229,10 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
             toggleClassNames.push(COLLAPSED_CLASS);
         }
         const toggleClassName = toggleClassNames.join(' ');
-        return <ReflexElement size={this.state.size} {...this.props}>
-            <div className={ViewContainerPart.Styles.VIEW_CONTAINER_PART_CLASS}>
-                <div className={`theia-header ${ViewContainerPart.Styles.HEAD}`}
+        const reflexProps = Object.assign({ ...this.props }, { minSize: this.state.expanded ? 50 : 22 });
+        return <ReflexElement size={this.state.expanded ? this.state.size : 0} {...reflexProps}>
+            <div className={ViewContainerPart.Styles.PART}>
+                <div className={`theia-header ${ViewContainerPart.Styles.HEADER}`}
                     title={widget.title.caption}
                     onClick={this.toggle}
                     onContextMenu={this.handleContextMenu}>
@@ -311,8 +323,8 @@ export namespace ViewContainerPart {
         size: number;
     }
     export namespace Styles {
-        export const VIEW_CONTAINER_PART_CLASS = 'theia-view-container-part';
-        export const HEAD = 'head';
+        export const PART = 'part';
+        export const HEADER = 'header';
         export const LABEL = 'label';
         export const ELEMENT = 'element';
         export const BODY = 'body';
