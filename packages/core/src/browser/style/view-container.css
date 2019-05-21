@@ -49,6 +49,10 @@
     height: 100%;
 }
 
+.theia-view-container .part {
+    height: 100%;
+}
+
 .theia-view-container .part .header {
     cursor: pointer;
     display: flex;
@@ -78,4 +82,19 @@
 
 .theia-view-container .part:hover .body {
     display: block;
+}
+
+.theia-view-container .part .drop-target {
+    background-color: coral;
+}
+
+.theia-drag-image {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 12px;
+    position: absolute;
+    background: var(--theia-accent-color3);
+    font-size: var(--theia-ui-font-size1);
+    color: var(--theia-ui-font-color1);
 }

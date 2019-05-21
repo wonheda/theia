@@ -24,7 +24,7 @@ import { ContextMenuRenderer } from './context-menu-renderer';
 import { ApplicationShell } from './shell/application-shell';
 import { MaybePromise } from '../common/types';
 
-// const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
+const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
 
 export class ViewContainer extends ReactWidget implements ApplicationShell.TrackableWidgetProvider {
 
@@ -174,14 +174,36 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
         }
     }
 
+    protected movedBefore = (movedId: string, beforeId: string) => {
+        const movedIndex = this.state.widgets.findIndex(({ widget }) => widget.id === movedId);
+        const beforeIndex = this.state.widgets.findIndex(({ widget }) => widget.id === beforeId);
+        if (movedIndex !== -1 && beforeIndex !== -1) {
+            const { widgets } = this.state;
+            const toMove = widgets.splice(movedIndex, 1)[0];
+            if (toMove) {
+                widgets.splice(beforeIndex, 0, toMove);
+                this.setState({
+                    widgets
+                });
+            }
+        }
+    }
+
     public render() {
         const nodes: React.ReactNode[] = [];
-        for (const widget of this.state.widgets) {
-            const { id } = widget.widget;
+        for (let i = 0; i < this.state.widgets.length; i++) {
+            const { widget } = this.state.widgets[i];
+            const { id } = widget;
             if (nodes.length !== 0) {
                 nodes.push(<ReflexSplitter key={`splitter-${id}`} propagate={true} />);
             }
-            nodes.push(<ViewContainerPart key={id} widget={widget.widget} {...widget} onExpandedChange={this.onExpandedChange} />);
+            nodes.push(<ViewContainerPart
+                key={id}
+                widget={widget}
+                {...this.state.widgets[i]}
+                onExpandedChange={this.onExpandedChange}
+                movedBefore={this.movedBefore}
+            />);
         }
         return <div className={ViewContainerComponent.Styles.ROOT} ref={(element => this.container = element)}>
             {this.state.dimensions ? <ReflexContainer orientation='horizontal'>{nodes}</ReflexContainer> : ''}
@@ -222,6 +244,45 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
         }
     }
 
+    protected onDragStart = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
+        const { dataTransfer } = e;
+        if (dataTransfer) {
+            // dataTransfer.effectAllowed = 'move';
+            const dragImage = document.createElement('div');
+            dragImage.classList.add('theia-drag-image');
+            dragImage.textContent = widget.title.label;
+            document.body.appendChild(dragImage);
+            dataTransfer.setDragImage(dragImage, -10, -10);
+            dataTransfer.setData('view-container-dnd', widget.id);
+            setTimeout(() => document.body.removeChild(dragImage), 0);
+        }
+    }
+
+    protected onDragOver = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
+        e.preventDefault();
+        if (e.target instanceof HTMLElement) {
+            e.target.classList.add(ViewContainerPart.Styles.DROP_TARGET);
+        }
+    }
+
+    protected onDrop = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
+        const moveId = e.dataTransfer.getData('view-container-dnd');
+        if (moveId && moveId !== widget.id) {
+            this.props.movedBefore(moveId, widget.id);
+        }
+        e.preventDefault();
+        if (e.target instanceof HTMLElement) {
+            e.target.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
+        }
+    }
+
+    protected onDragLeave = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
+        e.preventDefault();
+        if (e.target instanceof HTMLElement) {
+            e.target.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
+        }
+    }
+
     render(): React.ReactNode {
         const { widget } = this.props;
         const toggleClassNames = [EXPANSION_TOGGLE_CLASS];
@@ -230,17 +291,26 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
         }
         const toggleClassName = toggleClassNames.join(' ');
         const reflexProps = Object.assign({ ...this.props }, { minSize: this.state.expanded ? 50 : 22 });
-        return <ReflexElement size={this.state.expanded ? this.state.size : 0} {...reflexProps}>
-            <div className={ViewContainerPart.Styles.PART}>
+        return <ReflexElement size={this.state.expanded ? this.state.size : 0} {...reflexProps} style={{ backgroundColor: backgroundColor() }}>
+            <div className={ViewContainerPart.Styles.PART}
+                onDragOver={e => this.onDragOver(e, widget)}
+                onDragLeave={e => this.onDragLeave(e, widget)}
+                onDrop={e => this.onDrop(e, widget)}>
                 <div className={`theia-header ${ViewContainerPart.Styles.HEADER}`}
                     title={widget.title.caption}
                     onClick={this.toggle}
-                    onContextMenu={this.handleContextMenu}>
+                    onContextMenu={this.handleContextMenu}
+                    draggable
+                    onDragStart={e => this.onDragStart(e, widget)}>
                     <span className={toggleClassName} />
                     <span className={`${ViewContainerPart.Styles.LABEL} noselect`}>{widget.title.label}</span>
                     {this.state.expanded && this.renderToolbar()}
                 </div>
-                {this.state.expanded && <div className={ViewContainerPart.Styles.BODY} ref={this.setRef} /*style={{ backgroundColor: backgroundColor() }}*/ />}
+                {this.state.expanded && <div
+                    className={ViewContainerPart.Styles.BODY}
+                    ref={this.setRef}
+                // onDragOver={e => this.onDragOver(e, widget)}
+                />}
             </div>
         </ReflexElement>;
     }
@@ -316,7 +386,11 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
 export namespace ViewContainerPart {
     export interface Props extends ReflexElementProps {
         readonly widget: Widget;
-        onExpandedChange?(widget: Widget, expanded: boolean): void;
+        onExpandedChange(widget: Widget, expanded: boolean): void;
+        /**
+         * `movedId` the ID of the widget to insert before the widget with `beforeId`.
+         */
+        movedBefore(movedId: string, beforeId: string): void
     }
     export interface State {
         expanded: boolean;
@@ -328,6 +402,7 @@ export namespace ViewContainerPart {
         export const LABEL = 'label';
         export const ELEMENT = 'element';
         export const BODY = 'body';
+        export const DROP_TARGET = 'drop-target';
     }
 }
 
