@@ -32,6 +32,8 @@ import { ProvidedTaskConfigurations } from './provided-task-configurations';
 import { Range } from 'vscode-languageserver-types';
 import URI from '@theia/core/lib/common/uri';
 
+const deepmerge: (args: object[]) => object = require('deepmerge').default.all;
+
 @injectable()
 export class TaskService implements TaskConfigurationClient {
     /**
@@ -237,14 +239,41 @@ export class TaskService implements TaskConfigurationClient {
      * It looks for configured and provided tasks.
      */
     async run(source: string, taskLabel: string): Promise<void> {
+        const task = await this.getTaskConfiguration(source, taskLabel);
+        if (!task) {
+            this.logger.error(`Can't get task launch configuration for label: ${taskLabel}`);
+            return;
+        }
+
+        this.runTask(task);
+    }
+
+    protected async getTaskConfiguration(source: string, taskLabel: string): Promise<TaskConfiguration | undefined> {
         let task = await this.getProvidedTask(source, taskLabel);
         if (!task) {
             task = this.taskConfigurations.getTask(source, taskLabel);
-            if (!task) {
-                this.logger.error(`Can't get task launch configuration for label: ${taskLabel}`);
-                return;
-            }
         }
+        return task;
+    }
+
+    /**
+     * The same as run method, but the last parameter may contain additional task type specific properties
+     * which are used only for this request over persistent configuration of the task.
+     */
+    // tslint:disable-next-line:no-any
+    async customRun(source: string, taskLabel: string, taskPropertiesOverrides?: { [key: string]: any }): Promise<void> {
+        if (!taskPropertiesOverrides) {
+            this.run(source, taskLabel);
+            return;
+        }
+
+        let task = await this.getTaskConfiguration(source, taskLabel);
+        if (!task) {
+            this.logger.error(`Can't get task launch configuration for label: ${taskLabel}`);
+            return;
+        }
+
+        task = <TaskConfiguration>deepmerge([task, taskPropertiesOverrides]);
 
         this.runTask(task);
     }
