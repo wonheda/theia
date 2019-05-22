@@ -40,24 +40,19 @@ export class ViewContainer extends ReactWidget implements ApplicationShell.Track
         }
     }
 
-    public render() {
-        return <ViewContainerComponent widgets={this.props.map(prop => prop.widget)} services={this.services} contextMenuPath={this.contextMenuPath} />;
+    render() {
+        return <ViewContainerComponent
+            viewContainerId={this.id}
+            widgets={this.props.map(prop => prop.widget)}
+            services={this.services}
+            contextMenuPath={this.contextMenuPath}
+        />;
     }
 
     addWidget(prop: ViewContainer.Prop): Disposable {
         if (this.props.indexOf(prop) !== -1) {
             return Disposable.NULL;
         }
-        const commandId = this.showCommandId(prop.widget);
-        this.services.commandRegistry.registerCommand({ id: commandId }, {
-            execute: () => {
-                console.log('executing ' + commandId);
-            }
-        });
-        this.services.menuRegistry.registerMenuAction(this.contextMenuPath, {
-            commandId: commandId,
-            label: prop.widget.title.label
-        });
         this.props.push(prop);
         this.update();
         return Disposable.create(() => this.removeWidget(prop.widget));
@@ -68,9 +63,6 @@ export class ViewContainer extends ReactWidget implements ApplicationShell.Track
         if (index === -1) {
             return false;
         }
-        const commandId = this.showCommandId(widget);
-        this.services.commandRegistry.unregisterCommand(commandId);
-        this.services.menuRegistry.unregisterMenuAction(commandId);
         this.props.splice(index, 1);
         this.update();
         return true;
@@ -102,9 +94,6 @@ export class ViewContainer extends ReactWidget implements ApplicationShell.Track
         return [`${this.id}-context-menu`];
     }
 
-    protected showCommandId({ id }: { id: string }): string {
-        return `${this.id}:show-${id}`;
-    }
 }
 
 export namespace ViewContainer {
@@ -163,13 +152,39 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
 
     constructor(props: Readonly<ViewContainerComponent.Props>) {
         super(props);
-        const widgets: Array<{ widget: Widget } & ReflexElementProps> = [];
+        const widgets: Array<{ widget: Widget, hidden?: boolean } & ReflexElementProps> = [];
+        const { commandRegistry, menuRegistry } = this.props.services;
+        const { contextMenuPath } = this.props;
         for (let i = 0; i < props.widgets.length; i++) {
             const widget = props.widgets[i];
+            const { id } = widget;
+            const hidden = false;
             widgets.push({
                 widget,
                 direction: i === 0 ? 1 : i === props.widgets.length - 1 ? -1 : [1, -1],
-                minSize: 50
+                minSize: 50,
+                hidden // TODO: consider WidgetOptions#hideByDefault
+            });
+            const commandId = this.toggleVisibilityCommandId(widget);
+            commandRegistry.registerCommand({ id: commandId }, {
+                execute: () => {
+                    const widgetToToggle = this.state.widgets.find(w => w.widget.id === id);
+                    if (widgetToToggle) {
+                        widgetToToggle.hidden = !widgetToToggle.hidden;
+                        this.setState(this.state);
+                    }
+                },
+                isToggled: () => {
+                    const widgetToToggle = this.state.widgets.find(w => w.widget.id === id);
+                    if (widgetToToggle) {
+                        return !widgetToToggle.hidden;
+                    }
+                    return false;
+                }
+            });
+            menuRegistry.registerMenuAction(contextMenuPath, {
+                commandId: commandId,
+                label: widget.title.label
             });
         }
         this.state = {
@@ -177,12 +192,25 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
         };
     }
 
-    componentDidMount() {
+    protected toggleVisibilityCommandId({ id }: { id: string }): string {
+        return `${this.props.viewContainerId}:toggle-visibility-${id}`;
+    }
+
+    componentDidMount(): void {
         if (this.container) {
             const { clientHeight: height, clientWidth: width } = this.container;
             this.setState({
                 dimensions: { height, width }
             });
+        }
+    }
+
+    componentWillUnmount(): void {
+        const { commandRegistry, menuRegistry } = this.props.services;
+        for (const { widget } of this.state.widgets) {
+            const commandId = this.toggleVisibilityCommandId(widget);
+            commandRegistry.unregisterCommand(commandId);
+            menuRegistry.unregisterMenuAction(commandId);
         }
     }
 
@@ -212,23 +240,25 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
         }
     }
 
-    public render() {
+    render(): React.ReactNode {
         const nodes: React.ReactNode[] = [];
         for (let i = 0; i < this.state.widgets.length; i++) {
             const { widget } = this.state.widgets[i];
             const { id } = widget;
-            if (nodes.length !== 0) {
-                nodes.push(<ReflexSplitter key={`splitter-${id}`} propagate={true} />);
+            if (!this.state.widgets[i].hidden) {
+                if (nodes.length !== 0) {
+                    nodes.push(<ReflexSplitter key={`splitter-${id}`} propagate={true} />);
+                }
+                nodes.push(<ViewContainerPart
+                    key={id}
+                    widget={widget}
+                    {...this.state.widgets[i]}
+                    onExpandedChange={this.onExpandedChange}
+                    movedBefore={this.movedBefore}
+                    contextMenuRender={this.props.services.contextMenuRenderer}
+                    contextMenuPath={this.props.contextMenuPath}
+                />);
             }
-            nodes.push(<ViewContainerPart
-                key={id}
-                widget={widget}
-                {...this.state.widgets[i]}
-                onExpandedChange={this.onExpandedChange}
-                movedBefore={this.movedBefore}
-                contextMenuRender={this.props.services.contextMenuRenderer}
-                contextMenuPath={this.props.contextMenuPath}
-            />);
         }
         return <div className={ViewContainerComponent.Styles.ROOT} ref={(element => this.container = element)}>
             {this.state.dimensions ? <ReflexContainer orientation='horizontal'>{nodes}</ReflexContainer> : ''}
@@ -238,13 +268,14 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
 }
 export namespace ViewContainerComponent {
     export interface Props {
+        viewContainerId: string;
         widgets: Widget[];
         services: ViewContainer.Services;
         contextMenuPath: MenuPath;
     }
     export interface State {
         dimensions?: { height: number, width: number }
-        widgets: Array<{ widget: Widget } & ReflexElementProps>
+        widgets: Array<{ widget: Widget, hidden?: boolean } & ReflexElementProps>
     }
     export namespace Styles {
         export const ROOT = 'root';
