@@ -37,6 +37,7 @@
 .theia-view-container .horizontal > .reflex-splitter {
     border: none;
     height: 1px;
+    background: var(--theia-menu-color0);
 }
 
 .theia-view-container .reflex-container.horizontal > .reflex-splitter:hover,
