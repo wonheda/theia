@@ -242,7 +242,9 @@ export const frontendApplicationModule = new ContainerModule((bind, unbind, isBo
     bind(ViewContainer.Factory).toFactory(context => (...descriptors: ViewContainer.Factory.WidgetDescriptor[]) => {
         const { container } = context;
         const services: ViewContainer.Services = {
-            contextMenuRenderer: container.get(ContextMenuRenderer)
+            contextMenuRenderer: container.get(ContextMenuRenderer),
+            commandRegistry: container.get(CommandRegistry),
+            menuRegistry: container.get(MenuModelRegistry)
         };
         const props: ViewContainer.Prop[] = [];
         for (const descriptor of descriptors) {

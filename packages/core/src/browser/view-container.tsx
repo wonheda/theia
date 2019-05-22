@@ -20,9 +20,11 @@ import 'react-reflex/styles.css';
 import { ReflexContainer, ReflexSplitter, ReflexElement, ReflexElementProps } from 'react-reflex';
 import { ReactWidget, Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message } from './widgets';
 import { Disposable } from '../common/disposable';
+import { MaybePromise } from '../common/types';
+import { CommandRegistry } from '../common/command';
+import { MenuModelRegistry, MenuPath } from '../common/menu';
 import { ContextMenuRenderer } from './context-menu-renderer';
 import { ApplicationShell } from './shell/application-shell';
-import { MaybePromise } from '../common/types';
 
 const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
 
@@ -34,19 +36,28 @@ export class ViewContainer extends ReactWidget implements ApplicationShell.Track
         super();
         this.addClass(ViewContainer.Styles.VIEW_CONTAINER_CLASS);
         for (const descriptor of props) {
-            // console.log('options', descriptor.options);
             this.toDispose.push(this.addWidget(descriptor));
         }
     }
 
     public render() {
-        return <ViewContainerComponent widgets={this.props.map(prop => prop.widget)} services={this.services} />;
+        return <ViewContainerComponent widgets={this.props.map(prop => prop.widget)} services={this.services} contextMenuPath={this.contextMenuPath} />;
     }
 
     addWidget(prop: ViewContainer.Prop): Disposable {
         if (this.props.indexOf(prop) !== -1) {
             return Disposable.NULL;
         }
+        const commandId = this.showCommandId(prop.widget);
+        this.services.commandRegistry.registerCommand({ id: commandId }, {
+            execute: () => {
+                console.log('executing ' + commandId);
+            }
+        });
+        this.services.menuRegistry.registerMenuAction(this.contextMenuPath, {
+            commandId: commandId,
+            label: prop.widget.title.label
+        });
         this.props.push(prop);
         this.update();
         return Disposable.create(() => this.removeWidget(prop.widget));
@@ -57,6 +68,9 @@ export class ViewContainer extends ReactWidget implements ApplicationShell.Track
         if (index === -1) {
             return false;
         }
+        const commandId = this.showCommandId(widget);
+        this.services.commandRegistry.unregisterCommand(commandId);
+        this.services.menuRegistry.unregisterMenuAction(commandId);
         this.props.splice(index, 1);
         this.update();
         return true;
@@ -84,6 +98,13 @@ export class ViewContainer extends ReactWidget implements ApplicationShell.Track
         return this.props.map(p => p.widget);
     }
 
+    protected get contextMenuPath(): MenuPath {
+        return [`${this.id}-context-menu`];
+    }
+
+    protected showCommandId({ id }: { id: string }): string {
+        return `${this.id}:show-${id}`;
+    }
 }
 
 export namespace ViewContainer {
@@ -93,6 +114,8 @@ export namespace ViewContainer {
     }
     export interface Services {
         readonly contextMenuRenderer: ContextMenuRenderer;
+        readonly commandRegistry: CommandRegistry;
+        readonly menuRegistry: MenuModelRegistry;
     }
     export namespace Styles {
         export const VIEW_CONTAINER_CLASS = 'theia-view-container';
@@ -203,6 +226,8 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
                 {...this.state.widgets[i]}
                 onExpandedChange={this.onExpandedChange}
                 movedBefore={this.movedBefore}
+                contextMenuRender={this.props.services.contextMenuRenderer}
+                contextMenuPath={this.props.contextMenuPath}
             />);
         }
         return <div className={ViewContainerComponent.Styles.ROOT} ref={(element => this.container = element)}>
@@ -215,6 +240,7 @@ export namespace ViewContainerComponent {
     export interface Props {
         widgets: Widget[];
         services: ViewContainer.Services;
+        contextMenuPath: MenuPath;
     }
     export interface State {
         dimensions?: { height: number, width: number }
@@ -247,7 +273,7 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
     protected onDragStart = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
         const { dataTransfer } = e;
         if (dataTransfer) {
-            // dataTransfer.effectAllowed = 'move';
+            dataTransfer.effectAllowed = 'move';
             const dragImage = document.createElement('div');
             dragImage.classList.add('theia-drag-image');
             dragImage.textContent = widget.title.label;
@@ -319,10 +345,7 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
                     <span className={`${ViewContainerPart.Styles.LABEL} noselect`}>{widget.title.label}</span>
                     {this.state.expanded && this.renderToolbar()}
                 </div>
-                {this.state.expanded && <div
-                    className={ViewContainerPart.Styles.BODY}
-                    ref={this.setRef}
-                // onDragOver={e => this.onDragOver(e, widget)}
+                {this.state.expanded && <div className={ViewContainerPart.Styles.BODY} ref={this.setRef}
                 />}
             </div>
         </ReflexElement>;
@@ -362,7 +385,10 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
         const { nativeEvent } = event;
         // Secondary button pressed, usually the right button.
         if (nativeEvent.button === 2 /* right */) {
-            console.log('heyho!!!');
+            event.stopPropagation();
+            event.preventDefault();
+            const { contextMenuRender, contextMenuPath } = this.props;
+            contextMenuRender.render(contextMenuPath, event.nativeEvent);
         }
     }
 
@@ -398,12 +424,14 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
 
 export namespace ViewContainerPart {
     export interface Props extends ReflexElementProps {
+        readonly contextMenuRender: ContextMenuRenderer;
+        readonly contextMenuPath: MenuPath;
         readonly widget: Widget;
         onExpandedChange(widget: Widget, expanded: boolean): void;
         /**
          * `movedId` the ID of the widget to insert before the widget with `beforeId`.
          */
-        movedBefore(movedId: string, beforeId: string): void
+        movedBefore(movedId: string, beforeId: string): void;
     }
     export interface State {
         expanded: boolean;
