@@ -23,10 +23,10 @@ import { Disposable } from '../common/disposable';
 import { MaybePromise } from '../common/types';
 import { CommandRegistry } from '../common/command';
 import { MenuModelRegistry, MenuPath } from '../common/menu';
-import { ContextMenuRenderer } from './context-menu-renderer';
+import { ContextMenuRenderer, Anchor } from './context-menu-renderer';
 import { ApplicationShell } from './shell/application-shell';
 
-const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
+// const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
 
 export class ViewContainer extends ReactWidget implements ApplicationShell.TrackableWidgetProvider {
 
@@ -182,11 +182,33 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
                     return false;
                 }
             });
-            menuRegistry.registerMenuAction(contextMenuPath, {
+            menuRegistry.registerMenuAction([...contextMenuPath, '1_widgets'], {
                 commandId: commandId,
                 label: widget.title.label
             });
         }
+        commandRegistry.registerCommand({ id: this.globalHideCommandId }, {
+            execute: (anchor: Anchor) => {
+                const { x, y } = anchor;
+                const element = document.elementFromPoint(x, y);
+                if (element instanceof Element) {
+                    const part = ViewContainerPart.closestPart(element);
+                    if (part && part.id) {
+                        const widgetId = part.id.replace(`${this.props.viewContainerId}--`, '');
+                        const widgetToToggle = this.state.widgets.find(w => w.widget.id === widgetId);
+                        if (widgetToToggle) {
+                            widgetToToggle.hidden = true;
+                            this.setState(this.state);
+                        }
+                    }
+                }
+            },
+            isVisible: () => this.state.widgets.some(widget => !widget.hidden)
+        });
+        menuRegistry.registerMenuAction([...contextMenuPath, '0_global'], {
+            commandId: this.globalHideCommandId,
+            label: 'Hide'
+        });
         this.state = {
             widgets
         };
@@ -194,6 +216,10 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
 
     protected toggleVisibilityCommandId({ id }: { id: string }): string {
         return `${this.props.viewContainerId}:toggle-visibility-${id}`;
+    }
+
+    protected get globalHideCommandId(): string {
+        return `${this.props.viewContainerId}:toggle-visibility`;
     }
 
     componentDidMount(): void {
@@ -207,8 +233,7 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
 
     componentWillUnmount(): void {
         const { commandRegistry, menuRegistry } = this.props.services;
-        for (const { widget } of this.state.widgets) {
-            const commandId = this.toggleVisibilityCommandId(widget);
+        for (const commandId of [this.globalHideCommandId, ...this.state.widgets.map(({ widget }) => this.toggleVisibilityCommandId(widget))]) {
             commandRegistry.unregisterCommand(commandId);
             menuRegistry.unregisterMenuAction(commandId);
         }
@@ -240,6 +265,17 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
         }
     }
 
+    protected handleContextMenu = (event: React.MouseEvent<HTMLElement>) => {
+        const { nativeEvent } = event;
+        if (nativeEvent.button === 2 /* right */ && !!this.state.dimensions && this.state.widgets.every(widget => !!widget.hidden)) {
+            event.stopPropagation();
+            event.preventDefault();
+            const { services, contextMenuPath } = this.props;
+            const { contextMenuRenderer } = services;
+            contextMenuRenderer.render(contextMenuPath, event.nativeEvent);
+        }
+    }
+
     render(): React.ReactNode {
         const nodes: React.ReactNode[] = [];
         for (let i = 0; i < this.state.widgets.length; i++) {
@@ -252,15 +288,19 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
                 nodes.push(<ViewContainerPart
                     key={id}
                     widget={widget}
+                    viewContainerId={this.props.viewContainerId}
                     {...this.state.widgets[i]}
                     onExpandedChange={this.onExpandedChange}
                     movedBefore={this.movedBefore}
-                    contextMenuRender={this.props.services.contextMenuRenderer}
+                    contextMenuRenderer={this.props.services.contextMenuRenderer}
                     contextMenuPath={this.props.contextMenuPath}
                 />);
             }
         }
-        return <div className={ViewContainerComponent.Styles.ROOT} ref={(element => this.container = element)}>
+        return <div
+            className={ViewContainerComponent.Styles.ROOT}
+            ref={(element => this.container = element)}
+            onContextMenu={this.handleContextMenu}>
             {this.state.dimensions ? <ReflexContainer orientation='horizontal'>{nodes}</ReflexContainer> : ''}
         </div>;
     }
@@ -317,7 +357,7 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
 
     protected onDragOver = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
         e.preventDefault();
-        const reflexElement = this.closestPart(e.target);
+        const reflexElement = ViewContainerPart.closestPart(e.target);
         if (reflexElement instanceof HTMLElement) {
             reflexElement.classList.add(ViewContainerPart.Styles.DROP_TARGET);
         }
@@ -329,7 +369,7 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
             this.props.movedBefore(moveId, widget.id);
         }
         e.preventDefault();
-        const part = this.closestPart(e.target);
+        const part = ViewContainerPart.closestPart(e.target);
         if (part instanceof HTMLElement) {
             part.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
         }
@@ -337,20 +377,10 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
 
     protected onDragLeave = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
         e.preventDefault();
-        const part = this.closestPart(e.target);
+        const part = ViewContainerPart.closestPart(e.target);
         if (part instanceof HTMLElement) {
             part.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
         }
-    }
-
-    private closestPart(element: Element | EventTarget, selector: string = `div.${ViewContainerPart.Styles.PART}`): Element | undefined {
-        if (element instanceof Element) {
-            const part = element.closest(selector);
-            if (part instanceof Element) {
-                return part;
-            }
-        }
-        return undefined;
     }
 
     render(): React.ReactNode {
@@ -361,8 +391,11 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
         }
         const toggleClassName = toggleClassNames.join(' ');
         const reflexProps = Object.assign({ ...this.props }, { minSize: this.state.expanded ? 50 : 22 });
-        return <ReflexElement size={this.state.expanded ? this.state.size : 0} {...reflexProps}>
-            <div className={ViewContainerPart.Styles.PART}
+        return <ReflexElement
+            size={this.state.expanded ? this.state.size : 0}
+            {...reflexProps}>
+            <div id={`${this.props.viewContainerId}--${widget.id}`}
+                className={ViewContainerPart.Styles.PART}
                 onDragOver={e => this.onDragOver(e, widget)}
                 onDragLeave={e => this.onDragLeave(e, widget)}
                 onDrop={e => this.onDrop(e, widget)}>
@@ -418,8 +451,8 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
         if (nativeEvent.button === 2 /* right */) {
             event.stopPropagation();
             event.preventDefault();
-            const { contextMenuRender, contextMenuPath } = this.props;
-            contextMenuRender.render(contextMenuPath, event.nativeEvent);
+            const { contextMenuRenderer, contextMenuPath } = this.props;
+            contextMenuRenderer.render(contextMenuPath, event.nativeEvent);
         }
     }
 
@@ -454,8 +487,10 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
 }
 
 export namespace ViewContainerPart {
+
     export interface Props extends ReflexElementProps {
-        readonly contextMenuRender: ContextMenuRenderer;
+        readonly viewContainerId: string;
+        readonly contextMenuRenderer: ContextMenuRenderer;
         readonly contextMenuPath: MenuPath;
         readonly widget: Widget;
         onExpandedChange(widget: Widget, expanded: boolean): void;
@@ -464,10 +499,12 @@ export namespace ViewContainerPart {
          */
         movedBefore(movedId: string, beforeId: string): void;
     }
+
     export interface State {
         expanded: boolean;
         size: number;
     }
+
     export namespace Styles {
         export const PART = 'part';
         export const HEADER = 'header';
@@ -475,6 +512,16 @@ export namespace ViewContainerPart {
         export const ELEMENT = 'element';
         export const BODY = 'body';
         export const DROP_TARGET = 'drop-target';
+    }
+
+    export function closestPart(element: Element | EventTarget, selector: string = `div.${ViewContainerPart.Styles.PART}`): Element | undefined {
+        if (element instanceof Element) {
+            const part = element.closest(selector);
+            if (part instanceof Element) {
+                return part;
+            }
+        }
+        return undefined;
     }
 }
 
