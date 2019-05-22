@@ -260,8 +260,9 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
 
     protected onDragOver = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
         e.preventDefault();
-        if (e.target instanceof HTMLElement) {
-            e.target.classList.add(ViewContainerPart.Styles.DROP_TARGET);
+        const reflexElement = this.closestPart(e.target);
+        if (reflexElement instanceof HTMLElement) {
+            reflexElement.classList.add(ViewContainerPart.Styles.DROP_TARGET);
         }
     }
 
@@ -271,16 +272,28 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
             this.props.movedBefore(moveId, widget.id);
         }
         e.preventDefault();
-        if (e.target instanceof HTMLElement) {
-            e.target.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
+        const part = this.closestPart(e.target);
+        if (part instanceof HTMLElement) {
+            part.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
         }
     }
 
     protected onDragLeave = (e: React.DragEvent<HTMLDivElement>, widget: Widget) => {
         e.preventDefault();
-        if (e.target instanceof HTMLElement) {
-            e.target.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
+        const part = this.closestPart(e.target);
+        if (part instanceof HTMLElement) {
+            part.classList.remove(ViewContainerPart.Styles.DROP_TARGET);
         }
+    }
+
+    private closestPart(element: Element | EventTarget, selector: string = `div.${ViewContainerPart.Styles.PART}`): Element | undefined {
+        if (element instanceof Element) {
+            const part = element.closest(selector);
+            if (part instanceof Element) {
+                return part;
+            }
+        }
+        return undefined;
     }
 
     render(): React.ReactNode {
@@ -291,7 +304,7 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
         }
         const toggleClassName = toggleClassNames.join(' ');
         const reflexProps = Object.assign({ ...this.props }, { minSize: this.state.expanded ? 50 : 22 });
-        return <ReflexElement size={this.state.expanded ? this.state.size : 0} {...reflexProps} style={{ backgroundColor: backgroundColor() }}>
+        return <ReflexElement size={this.state.expanded ? this.state.size : 0} {...reflexProps}>
             <div className={ViewContainerPart.Styles.PART}
                 onDragOver={e => this.onDragOver(e, widget)}
                 onDragLeave={e => this.onDragLeave(e, widget)}

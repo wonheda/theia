@@ -84,8 +84,8 @@
     display: block;
 }
 
-.theia-view-container .part .drop-target {
-    background-color: coral;
+.theia-view-container .part.drop-target {
+    background-color: var(--theia-layout-color3);
 }
 
 .theia-drag-image {
