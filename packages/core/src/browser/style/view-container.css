@@ -80,11 +80,10 @@
 
 .theia-view-container .part {
     height: 100%;
-    /* position: relative; */
 }
 
 .theia-view-container .body {
-    /* background-color: green; */
+    height: 100%;
 }
 
 .theia-view-container .part .header {
@@ -94,10 +93,6 @@
     background: var(--theia-menu-color0);
     line-height: 22px;
     z-index: 10;
-    /* position: absolute;
-    top: 0px;
-    left: 0px;
-    width: 100%; */
 }
 
 .theia-view-container .part .header .label {

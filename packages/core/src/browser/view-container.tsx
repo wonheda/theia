@@ -364,6 +364,10 @@ export class ViewContainerPartWidget2 extends BaseWidget {
         this.node.tabIndex = 0;
     }
 
+    protected getScrollContainer(): HTMLElement {
+        return this.body;
+    }
+
     get onCollapsed(): Event<boolean> {
         return this.collapsedEmitter.event;
     }
