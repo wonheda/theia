@@ -38,7 +38,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         super();
         this.id = `view-container-widget-${v4()}`;
         this.addClass('theia-view-container');
-        const layout = new SplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 1, orientation: 'vertical' });
+        const layout = new SplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: 'vertical' });
         this.panel = new SplitPanel({ layout });
         this.panel.addClass('split-panel');
         for (const { widget } of props) {
@@ -342,6 +342,8 @@ export class ViewContainerPartWidget2 extends BaseWidget {
     protected readonly collapsedEmitter = new Emitter<boolean>();
 
     protected collapsed: boolean;
+    // This is a workaround for not being able to sniff into the `event.dataTransfer.getData` value when `dragover` due to security reasons.
+    protected canBeDropTarget: boolean = true;
 
     constructor(protected widget: Widget, { collapsed }: { collapsed: boolean } = { collapsed: false }) {
         super();
@@ -372,7 +374,9 @@ export class ViewContainerPartWidget2 extends BaseWidget {
             event.preventDefault();
             const part = ViewContainerPart.closestPart(event.target);
             if (part instanceof HTMLElement) {
-                part.classList.add('drop-target');
+                if (this.canBeDropTarget) {
+                    part.classList.add('drop-target');
+                }
             }
         };
         const unstyle = (event: DragEvent) => {
@@ -386,6 +390,7 @@ export class ViewContainerPartWidget2 extends BaseWidget {
             addEventListener(this.header, 'dragstart', event => {
                 const { dataTransfer } = event;
                 if (dataTransfer) {
+                    this.canBeDropTarget = false;
                     dataTransfer.effectAllowed = 'move';
                     dataTransfer.setData('view-container-dnd', this.widget.id);
                     const dragImage = document.createElement('div');
@@ -396,6 +401,7 @@ export class ViewContainerPartWidget2 extends BaseWidget {
                     setTimeout(() => document.body.removeChild(dragImage), 0);
                 }
             }, false),
+            addEventListener(this.node, 'dragend', () => this.canBeDropTarget = true, false),
             addEventListener(this.node, 'dragover', style, false),
             addEventListener(this.node, 'dragleave', unstyle, false),
             addEventListener(this.node, 'drop', event => {

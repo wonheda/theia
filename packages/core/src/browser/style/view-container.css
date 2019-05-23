@@ -31,7 +31,7 @@
 
 .theia-view-container .p-SplitPanel > .p-SplitPanel-handle:after {
     background-color: var(--theia-menu-color0);
-    min-height: 1px;
+    min-height: 2px;
 }
 
 .theia-view-container .p-SplitPanel-handle {
@@ -80,6 +80,7 @@
 
 .theia-view-container .part {
     height: 100%;
+    /* position: relative; */
 }
 
 .theia-view-container .body {
@@ -93,6 +94,10 @@
     background: var(--theia-menu-color0);
     line-height: 22px;
     z-index: 10;
+    /* position: absolute;
+    top: 0px;
+    left: 0px;
+    width: 100%; */
 }
 
 .theia-view-container .part .header .label {
