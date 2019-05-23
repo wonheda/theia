@@ -20,8 +20,36 @@
     flex-direction: column;
 }
 
+.theia-view-container .split-panel {
+    height: 100%;
+    width: 100%;
+}
+
+.theia-view-container .split-panel .p-SplitPanel-child {
+    min-height: 22px;
+}
+
+.theia-view-container .p-SplitPanel > .p-SplitPanel-handle:after {
+    background-color: var(--theia-menu-color0);
+    min-height: 1px;
+}
+
+.theia-view-container .p-SplitPanel-handle {
+    background-color: var(--theia-menu-color0);
+}
+
 .theia-view-container .foo-bar-baz {
     height: 500px;
+}
+
+
+
+
+
+
+
+.theia-view-container .reflex-container > .reflex-element {
+    /* overflow: hidden; */
 }
 
 .theia-view-container .reflex-container > .reflex-splitter.active,
@@ -52,6 +80,10 @@
 
 .theia-view-container .part {
     height: 100%;
+}
+
+.theia-view-container .body {
+    /* background-color: green; */
 }
 
 .theia-view-container .part .header {

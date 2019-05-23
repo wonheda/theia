@@ -15,11 +15,13 @@
  ********************************************************************************/
 
 import { interfaces } from 'inversify';
+import { v4 } from 'uuid';
 import * as React from 'react';
 import 'react-reflex/styles.css';
 import { ReflexContainer, ReflexSplitter, ReflexElement, ReflexElementProps } from 'react-reflex';
-import { ReactWidget, Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message } from './widgets';
-import { Disposable } from '../common/disposable';
+import { Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message, SplitPanel, BaseWidget, addEventListener, SplitLayout } from './widgets';
+import { Event, Emitter } from '../common/event';
+import { Disposable, DisposableCollection } from '../common/disposable';
 import { MaybePromise } from '../common/types';
 import { CommandRegistry } from '../common/command';
 import { MenuModelRegistry, MenuPath } from '../common/menu';
@@ -28,70 +30,81 @@ import { ApplicationShell } from './shell/application-shell';
 
 // const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
 
-export class ViewContainer extends ReactWidget implements ApplicationShell.TrackableWidgetProvider {
+export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
-    protected readonly props: ViewContainer.Prop[] = [];
+    protected readonly panel: SplitPanel;
 
     constructor(protected readonly services: ViewContainer.Services, ...props: ViewContainer.Prop[]) {
         super();
-        this.addClass(ViewContainer.Styles.VIEW_CONTAINER_CLASS);
-        for (const descriptor of props) {
-            this.toDispose.push(this.addWidget(descriptor));
+        this.id = `view-container-widget-${v4()}`;
+        this.addClass('theia-view-container');
+        const layout = new SplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 1, orientation: 'vertical' });
+        this.panel = new SplitPanel({ layout });
+        this.panel.addClass('split-panel');
+        for (const { widget } of props) {
+            this.panel.addWidget(new ViewContainerPartWidget2(widget));
         }
-    }
-
-    render() {
-        return <ViewContainerComponent
-            viewContainerId={this.id}
-            widgets={this.props.map(prop => prop.widget)}
-            services={this.services}
-            contextMenuPath={this.contextMenuPath}
-        />;
     }
 
     addWidget(prop: ViewContainer.Prop): Disposable {
-        if (this.props.indexOf(prop) !== -1) {
-            return Disposable.NULL;
-        }
-        this.props.push(prop);
-        this.update();
-        return Disposable.create(() => this.removeWidget(prop.widget));
+        // if (this.props.indexOf(prop) !== -1) {
+        return Disposable.NULL;
+        // }
+        // this.props.push(prop);
+        // this.container.addWidget(prop.widget);
+        // this.update();
+        // return Disposable.create(() => this.removeWidget(prop.widget));
     }
 
     removeWidget(widget: Widget): boolean {
-        const index = this.props.map(p => p.widget).indexOf(widget);
-        if (index === -1) {
-            return false;
-        }
-        this.props.splice(index, 1);
-        this.update();
-        return true;
+        // const index = this.props.map(p => p.widget).indexOf(widget);
+        // if (index === -1) {
+        return false;
+        // }
+        // this.props.splice(index, 1);
+        // this.update();
+        // return true;
     }
 
     protected onResize(msg: Widget.ResizeMessage): void {
         super.onResize(msg);
-        this.props.forEach(prop => MessageLoop.sendMessage(prop.widget, Widget.ResizeMessage.UnknownSize));
+        [this.panel, ...this.widgets].forEach(widget => MessageLoop.sendMessage(widget, Widget.ResizeMessage.UnknownSize));
     }
 
     protected onUpdateRequest(msg: Message): void {
-        this.props.forEach(prop => prop.widget.update());
+        [this.panel, ...this.widgets].forEach(widget => widget.update());
         super.onUpdateRequest(msg);
     }
 
     onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
-        const prop = this.props.values().next().value;
-        if (prop) {
-            prop.widget.activate();
+        this.panel.activate();
+    }
+
+    onAfterAttach(msg: Message): void {
+        if (this.panel.isAttached) {
+            Widget.detach(this.panel);
         }
+        Widget.attach(this.panel, this.node);
+        super.onAfterAttach(msg);
     }
 
     getTrackableWidgets(): MaybePromise<Widget[]> {
-        return this.props.map(p => p.widget);
+        return this.widgets;
     }
 
-    protected get contextMenuPath(): MenuPath {
-        return [`${this.id}-context-menu`];
+    /**
+     * Sugar for `this.panel.children()`.
+     */
+    protected get widgets(): Widget[] {
+        const widgets: Widget[] = [];
+        const itr = this.panel.children();
+        let next = itr.next();
+        while (next) {
+            widgets.push(next);
+            next = itr.next();
+        }
+        return widgets;
     }
 
 }
@@ -309,9 +322,9 @@ export class ViewContainerComponent extends React.Component<ViewContainerCompone
 export namespace ViewContainerComponent {
     export interface Props {
         viewContainerId: string;
+        contextMenuPath: MenuPath;
         widgets: Widget[];
         services: ViewContainer.Services;
-        contextMenuPath: MenuPath;
     }
     export interface State {
         dimensions?: { height: number, width: number }
@@ -320,6 +333,128 @@ export namespace ViewContainerComponent {
     export namespace Styles {
         export const ROOT = 'root';
     }
+}
+
+export class ViewContainerPartWidget2 extends BaseWidget {
+
+    protected readonly header: HTMLElement;
+    protected readonly body: HTMLElement;
+    protected readonly collapsedEmitter = new Emitter<boolean>();
+
+    protected collapsed: boolean;
+
+    constructor(protected widget: Widget, { collapsed }: { collapsed: boolean } = { collapsed: false }) {
+        super();
+        this.addClass('part');
+        this.collapsed = collapsed;
+        const { header, body, disposable } = this.createContent();
+        this.header = header;
+        this.body = body;
+        this.toDispose.pushAll([
+            this.collapsedEmitter,
+            disposable
+        ]);
+        this.scrollOptions = {
+            suppressScrollX: true,
+            minScrollbarLength: 35
+        };
+        this.node.tabIndex = 0;
+    }
+
+    get onCollapsed(): Event<boolean> {
+        return this.collapsedEmitter.event;
+    }
+
+    getScrollContainer(): HTMLElement {
+        return this.node;
+    }
+
+    protected createContent(): { header: HTMLElement, body: HTMLElement, disposable: Disposable } {
+        const disposable = new DisposableCollection();
+        const { header, disposable: headerDisposable } = this.createHeader();
+        const body = document.createElement('div');
+        body.classList.add('body');
+        this.node.appendChild(header);
+        this.node.appendChild(body);
+        disposable.push(headerDisposable);
+        return {
+            header,
+            body,
+            disposable,
+        };
+    }
+
+    protected createHeader(): { header: HTMLElement, disposable: Disposable } {
+        const disposable = new DisposableCollection();
+        const header = document.createElement('div');
+        header.classList.add('theia-header', 'header');
+        disposable.push(addEventListener(header, 'click', () => {
+            this.collapsed = !this.collapsed;
+            // TODO: do we really need this? Cannot we hide the `widget`? Can we pass in container instead?
+            this.collapsedEmitter.fire(this.collapsed);
+            this.body.style.display = this.collapsed ? 'none' : 'block';
+            // tslint:disable-next-line:no-shadowed-variable
+            const toggleIcon = this.header.querySelector(`span.${EXPANSION_TOGGLE_CLASS}`);
+            if (toggleIcon) {
+                toggleIcon.classList.toggle(COLLAPSED_CLASS);
+            }
+            this.update();
+        }));
+
+        const toggleIcon = document.createElement('span');
+        toggleIcon.classList.add(EXPANSION_TOGGLE_CLASS);
+        if (this.collapsed) {
+            toggleIcon.classList.add(COLLAPSED_CLASS);
+        }
+        header.appendChild(toggleIcon);
+
+        const title = document.createElement('span');
+        title.classList.add('label', 'noselect');
+        title.innerText = this.widget.title.label;
+        header.appendChild(title);
+
+        if (ViewContainerPartWidget.is(this.widget)) {
+            for (const { tooltip, execute, className } of this.widget.toolbarElements.filter(e => e.enabled !== false)) {
+                const toolbarItem = document.createElement('span');
+                toolbarItem.classList.add('element');
+                if (className) {
+                    // XXX: `className` should be `MaybeArray<string>` instead.
+                    toolbarItem.classList.add(...className.split(' '));
+                }
+                toolbarItem.title = tooltip;
+                disposable.push(addEventListener(toolbarItem, 'click', async event => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    await execute();
+                    this.update();
+                }));
+                header.appendChild(toolbarItem);
+            }
+        }
+        return {
+            header,
+            disposable
+        };
+    }
+
+    onAfterAttach(msg: Message): void {
+        MessageLoop.sendMessage(this.widget, Widget.Msg.BeforeAttach);
+        if (this.widget.isAttached) {
+            Widget.detach(this.widget);
+        }
+        Widget.attach(this.widget, this.body);
+        MessageLoop.sendMessage(this.widget, Widget.Msg.AfterAttach);
+        this.update();
+        super.onAfterAttach(msg);
+    }
+
+    onUpdateRequest(msg: Message): void {
+        if (this.widget.isAttached) {
+            this.widget.update();
+        }
+        super.onUpdateRequest(msg);
+    }
+
 }
 
 export class ViewContainerPart extends React.Component<ViewContainerPart.Props, ViewContainerPart.State> {
@@ -392,6 +527,7 @@ export class ViewContainerPart extends React.Component<ViewContainerPart.Props, 
         const toggleClassName = toggleClassNames.join(' ');
         const reflexProps = Object.assign({ ...this.props }, { minSize: this.state.expanded ? 50 : 22 });
         return <ReflexElement
+            propagateDimensions={true}
             size={this.state.expanded ? this.state.size : 0}
             {...reflexProps}>
             <div id={`${this.props.viewContainerId}--${widget.id}`}
