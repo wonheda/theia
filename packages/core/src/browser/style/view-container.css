@@ -118,16 +118,20 @@
 }
 
 .theia-view-container .part.drop-target {
-    background-color: var(--theia-layout-color3);
+    background: rgba(33, 150, 243, 0.1);
+    border: var(--theia-border-width) dashed var(--theia-brand-color1);
+    transition-property: top, left, right, bottom;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
 }
 
 .theia-drag-image {
-    display: inline-block;
-    padding: 1px 7px;
-    border-radius: 10px;
-    font-size: 12px;
+    background: var(--theia-menu-color0);
+    line-height: 22px;
     position: absolute;
-    background: var(--theia-accent-color3);
-    font-size: var(--theia-ui-font-size1);
     color: var(--theia-ui-font-color1);
+    text-transform: uppercase;
+    font-size: var(--theia-ui-font-size0);
+    font-weight: 500;
+    padding: 0 var(--theia-ui-padding) 0 var(--theia-ui-padding);
 }

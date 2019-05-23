@@ -352,7 +352,8 @@ export class ViewContainerPartWidget2 extends BaseWidget {
         this.body = body;
         this.toDispose.pushAll([
             this.collapsedEmitter,
-            disposable
+            disposable,
+            this.configureDnd()
         ]);
         this.scrollOptions = {
             suppressScrollX: true,
@@ -365,8 +366,49 @@ export class ViewContainerPartWidget2 extends BaseWidget {
         return this.collapsedEmitter.event;
     }
 
-    getScrollContainer(): HTMLElement {
-        return this.node;
+    protected configureDnd(): Disposable {
+        this.header.draggable = true;
+        const style = (event: DragEvent) => {
+            event.preventDefault();
+            const part = ViewContainerPart.closestPart(event.target);
+            if (part instanceof HTMLElement) {
+                part.classList.add('drop-target');
+            }
+        };
+        const unstyle = (event: DragEvent) => {
+            event.preventDefault();
+            const part = ViewContainerPart.closestPart(event.target);
+            if (part instanceof HTMLElement) {
+                part.classList.remove('drop-target');
+            }
+        };
+        return new DisposableCollection(...[
+            addEventListener(this.header, 'dragstart', event => {
+                const { dataTransfer } = event;
+                if (dataTransfer) {
+                    dataTransfer.effectAllowed = 'move';
+                    dataTransfer.setData('view-container-dnd', this.widget.id);
+                    const dragImage = document.createElement('div');
+                    dragImage.classList.add('theia-drag-image');
+                    dragImage.innerText = this.widget.title.label;
+                    document.body.appendChild(dragImage);
+                    dataTransfer.setDragImage(dragImage, -10, -10);
+                    setTimeout(() => document.body.removeChild(dragImage), 0);
+                }
+            }, false),
+            addEventListener(this.node, 'dragover', style, false),
+            addEventListener(this.node, 'dragleave', unstyle, false),
+            addEventListener(this.node, 'drop', event => {
+                const { dataTransfer } = event;
+                if (dataTransfer) {
+                    const moveId = dataTransfer.getData('view-container-dnd');
+                    if (moveId && moveId !== this.widget.id) {
+                        console.log('moveBefore', moveId, this.widget.id);
+                    }
+                    unstyle(event);
+                }
+            }, false)
+        ]);
     }
 
     protected createContent(): { header: HTMLElement, body: HTMLElement, disposable: Disposable } {
@@ -650,7 +692,7 @@ export namespace ViewContainerPart {
         export const DROP_TARGET = 'drop-target';
     }
 
-    export function closestPart(element: Element | EventTarget, selector: string = `div.${ViewContainerPart.Styles.PART}`): Element | undefined {
+    export function closestPart(element: Element | EventTarget | null, selector: string = `div.${ViewContainerPart.Styles.PART}`): Element | undefined {
         if (element instanceof Element) {
             const part = element.closest(selector);
             if (part instanceof Element) {
