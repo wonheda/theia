@@ -114,7 +114,7 @@ export class DebugSessionWidget extends BaseWidget implements ApplicationShell.T
 
     protected createViewContainer(widget: Widget): Widget {
         const viewContainer = this.viewContainerFactory({ widget });
-        viewContainer.addWidget({ widget });
+        viewContainer.addWidget(widget);
         return viewContainer;
     }
 

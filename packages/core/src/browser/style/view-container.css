@@ -38,10 +38,6 @@
     background-color: var(--theia-menu-color0);
 }
 
-.theia-view-container .root {
-    height: 100%;
-}
-
 .theia-view-container .part {
     height: 100%;
 }
