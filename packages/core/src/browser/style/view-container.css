@@ -38,42 +38,6 @@
     background-color: var(--theia-menu-color0);
 }
 
-.theia-view-container .foo-bar-baz {
-    height: 500px;
-}
-
-
-
-
-
-
-
-.theia-view-container .reflex-container > .reflex-element {
-    /* overflow: hidden; */
-}
-
-.theia-view-container .reflex-container > .reflex-splitter.active,
-.theia-view-container .reflex-container > .reflex-splitter:hover {
-    background-color: var(--theia-menu-color0);
-    transition: all 1s ease;
-}
-
-.theia-view-container .reflex-container > .reflex-splitter {
-    background-color: var(--theia-menu-color0);
-}
-
-.theia-view-container .horizontal > .reflex-splitter {
-    border: none;
-    height: 1px;
-    background: var(--theia-menu-color0);
-}
-
-.theia-view-container .reflex-container.horizontal > .reflex-splitter:hover,
-.theia-view-container .reflex-container.horizontal > .reflex-splitter.active {
-  border-bottom: none;
-  border-top: none;
-}
-
 .theia-view-container .root {
     height: 100%;
 }

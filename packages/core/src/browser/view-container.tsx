@@ -42,46 +42,142 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         this.panel = new SplitPanel({ layout });
         this.panel.addClass('split-panel');
         for (const { widget } of props) {
-            this.panel.addWidget(new ViewContainerPartWidget2(widget));
+            this.addWidget(widget);
         }
+
+        const { commandRegistry, menuRegistry } = this.services;
+        commandRegistry.registerCommand({ id: this.globalHideCommandId }, {
+            execute: (anchor: Anchor) => {
+                const { x, y } = anchor;
+                const element = document.elementFromPoint(x, y);
+                if (element instanceof Element) {
+                    const closestPart = ViewContainerPart.closestPart(element);
+                    if (closestPart && closestPart.id) {
+                        const toHide = this.parts.find(part => part.id === closestPart.id);
+                        if (toHide) {
+                            this.toggleVisibility(toHide);
+                        }
+                    }
+                }
+            },
+            isVisible: () => this.parts.some(part => !part.isHidden)
+        });
+        menuRegistry.registerMenuAction([...this.contextMenuPath, '0_global'], {
+            commandId: this.globalHideCommandId,
+            label: 'Hide'
+        });
+        this.toDispose.pushAll([
+            Disposable.create(() => commandRegistry.unregisterCommand(this.globalHideCommandId)),
+            Disposable.create(() => menuRegistry.unregisterMenuAction(this.globalHideCommandId))
+        ]);
     }
 
-    addWidget(prop: ViewContainer.Prop): Disposable {
-        // if (this.props.indexOf(prop) !== -1) {
-        return Disposable.NULL;
-        // }
-        // this.props.push(prop);
-        // this.container.addWidget(prop.widget);
+    addWidget(widget: Widget, options?: ViewContainer.Factory.WidgetOptions): Disposable {
+        const widgets = this.parts.map(part => part.wrapped);
+        if (widgets.indexOf(widget) !== -1) {
+            return Disposable.NULL;
+        }
+        const newPart = this.createPart(widget);
+        this.registerPart(newPart);
+        this.panel.addWidget(newPart);
         // this.update();
-        // return Disposable.create(() => this.removeWidget(prop.widget));
+        return Disposable.create(() => this.removeWidget(widget));
     }
 
     removeWidget(widget: Widget): boolean {
-        // const index = this.props.map(p => p.widget).indexOf(widget);
-        // if (index === -1) {
-        return false;
-        // }
-        // this.props.splice(index, 1);
+        const part = this.parts.find(({ wrapped }) => wrapped.id === widget.id);
+        if (!part) {
+            return false;
+        }
+        this.unregisterPart(part);
+        // TODO: remove `part` from the `this.panel`.
         // this.update();
-        // return true;
+        return true;
+    }
+
+    getTrackableWidgets(): MaybePromise<Widget[]> {
+        return this.parts;
+    }
+
+    protected createPart(widget: Widget): ViewContainerPartWidget2 {
+        const { contextMenuRenderer } = this.services;
+        const { contextMenuPath } = this;
+        return new ViewContainerPartWidget2(
+            widget,
+            this.id,
+            {
+                contextMenuRenderer,
+                contextMenuPath
+            },
+            {
+                collapsed: false,
+                hidden: false
+            });
+    }
+
+    protected registerPart(toRegister: ViewContainerPartWidget2): void {
+        const { commandRegistry, menuRegistry } = this.services;
+        const commandId = this.toggleVisibilityCommandId(toRegister);
+        commandRegistry.registerCommand({ id: commandId }, {
+            execute: () => {
+                const toHide = this.parts.find(part => part.id === toRegister.id);
+                if (toHide) {
+                    this.toggleVisibility(toHide);
+                }
+            },
+            isToggled: () => {
+                const widgetToToggle = this.parts.find(part => part.id === toRegister.id);
+                if (widgetToToggle) {
+                    return !widgetToToggle.isHidden;
+                }
+                return false;
+            }
+        });
+        menuRegistry.registerMenuAction([...this.contextMenuPath, '1_widgets'], {
+            commandId: commandId,
+            label: toRegister.wrapped.title.label
+        });
+    }
+
+    protected unregisterPart(part: ViewContainerPartWidget2): void {
+        const { commandRegistry, menuRegistry } = this.services;
+        const commandId = this.toggleVisibilityCommandId(part);
+        commandRegistry.unregisterCommand(commandId);
+        menuRegistry.unregisterMenuAction(commandId);
+    }
+
+    protected toggleVisibility(part: ViewContainerPartWidget2): void {
+        console.log('toggleVisibility', part.id);
+    }
+
+    protected toggleCollapsed(part: ViewContainerPartWidget2): void {
+        console.log('toggleCollapsed', part.id);
+    }
+
+    protected moveBefore(toMovedId: string, moveBeforeThisId: string): void {
+        console.log('moveBefore', toMovedId, moveBeforeThisId);
     }
 
     protected onResize(msg: Widget.ResizeMessage): void {
+        for (const widget of [this.panel, ...this.parts]) {
+            MessageLoop.sendMessage(widget, Widget.ResizeMessage.UnknownSize);
+        }
         super.onResize(msg);
-        [this.panel, ...this.widgets].forEach(widget => MessageLoop.sendMessage(widget, Widget.ResizeMessage.UnknownSize));
     }
 
     protected onUpdateRequest(msg: Message): void {
-        [this.panel, ...this.widgets].forEach(widget => widget.update());
+        for (const widget of [this.panel, ...this.parts]) {
+            widget.update();
+        }
         super.onUpdateRequest(msg);
     }
 
-    onActivateRequest(msg: Message): void {
+    protected onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
         this.panel.activate();
     }
 
-    onAfterAttach(msg: Message): void {
+    protected onAfterAttach(msg: Message): void {
         if (this.panel.isAttached) {
             Widget.detach(this.panel);
         }
@@ -89,22 +185,34 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         super.onAfterAttach(msg);
     }
 
-    getTrackableWidgets(): MaybePromise<Widget[]> {
-        return this.widgets;
-    }
-
     /**
-     * Sugar for `this.panel.children()`.
+     * Sugar for `this.panel.children()`. Returns with the parts, **not** the `wrapped`, original widgets.
      */
-    protected get widgets(): Widget[] {
-        const widgets: Widget[] = [];
+    protected get parts(): ViewContainerPartWidget2[] {
+        const parts: ViewContainerPartWidget2[] = [];
         const itr = this.panel.children();
         let next = itr.next();
         while (next) {
-            widgets.push(next);
-            next = itr.next();
+            if (next instanceof ViewContainerPartWidget2) {
+                parts.push(next);
+                next = itr.next();
+            } else {
+                throw new Error(`Expected an instance of ${ViewContainerPartWidget2.prototype}. Got ${JSON.stringify(next)}`);
+            }
         }
-        return widgets;
+        return parts;
+    }
+
+    protected get contextMenuPath(): MenuPath {
+        return [`${this.id}-context-menu`];
+    }
+
+    protected toggleVisibilityCommandId(part: ViewContainerPartWidget2): string {
+        return `${this.id}:toggle-visibility-${part.id}`;
+    }
+
+    protected get globalHideCommandId(): string {
+        return `${this.id}:toggle-visibility`;
     }
 
 }
@@ -340,28 +448,39 @@ export class ViewContainerPartWidget2 extends BaseWidget {
     protected readonly header: HTMLElement;
     protected readonly body: HTMLElement;
     protected readonly collapsedEmitter = new Emitter<boolean>();
+    protected readonly hiddenEmitter = new Emitter<boolean>();
 
     protected collapsed: boolean;
+    protected hidden: boolean;
     // This is a workaround for not being able to sniff into the `event.dataTransfer.getData` value when `dragover` due to security reasons.
     protected canBeDropTarget: boolean = true;
 
-    constructor(protected widget: Widget, { collapsed }: { collapsed: boolean } = { collapsed: false }) {
+    constructor(
+        public readonly wrapped: Widget,
+        protected readonly viewContainerId: string,
+        { contextMenuRenderer, contextMenuPath }: { contextMenuRenderer: ContextMenuRenderer, contextMenuPath: MenuPath },
+        { collapsed, hidden }: { collapsed: boolean, hidden: boolean } = { collapsed: false, hidden: false }) {
+
         super();
+        this.id = `${this.viewContainerId}--${wrapped.id}`;
         this.addClass('part');
         this.collapsed = collapsed;
+        this.hidden = hidden;
         const { header, body, disposable } = this.createContent();
         this.header = header;
         this.body = body;
         this.toDispose.pushAll([
             this.collapsedEmitter,
             disposable,
-            this.configureDnd()
+            this.registerDND(),
+            this.registerContextMenu({ contextMenuRenderer, contextMenuPath })
         ]);
         this.scrollOptions = {
             suppressScrollX: true,
             minScrollbarLength: 35
         };
         this.node.tabIndex = 0;
+        this.setHidden(this.hidden);
     }
 
     protected getScrollContainer(): HTMLElement {
@@ -372,7 +491,20 @@ export class ViewContainerPartWidget2 extends BaseWidget {
         return this.collapsedEmitter.event;
     }
 
-    protected configureDnd(): Disposable {
+    protected registerContextMenu({ contextMenuRenderer, contextMenuPath }: { contextMenuRenderer: ContextMenuRenderer, contextMenuPath: MenuPath }): Disposable {
+        return new DisposableCollection(
+            addEventListener(this.header, 'contextmenu', event => {
+                // Secondary button pressed, usually the right button.
+                if (event.button === 2 /* right */) {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    contextMenuRenderer.render(contextMenuPath, event);
+                }
+            })
+        );
+    }
+
+    protected registerDND(): Disposable {
         this.header.draggable = true;
         const style = (event: DragEvent) => {
             event.preventDefault();
@@ -390,16 +522,16 @@ export class ViewContainerPartWidget2 extends BaseWidget {
                 part.classList.remove('drop-target');
             }
         };
-        return new DisposableCollection(...[
+        return new DisposableCollection(
             addEventListener(this.header, 'dragstart', event => {
                 const { dataTransfer } = event;
                 if (dataTransfer) {
                     this.canBeDropTarget = false;
                     dataTransfer.effectAllowed = 'move';
-                    dataTransfer.setData('view-container-dnd', this.widget.id);
+                    dataTransfer.setData('view-container-dnd', this.wrapped.id);
                     const dragImage = document.createElement('div');
                     dragImage.classList.add('theia-drag-image');
-                    dragImage.innerText = this.widget.title.label;
+                    dragImage.innerText = this.wrapped.title.label;
                     document.body.appendChild(dragImage);
                     dataTransfer.setDragImage(dragImage, -10, -10);
                     setTimeout(() => document.body.removeChild(dragImage), 0);
@@ -412,13 +544,13 @@ export class ViewContainerPartWidget2 extends BaseWidget {
                 const { dataTransfer } = event;
                 if (dataTransfer) {
                     const moveId = dataTransfer.getData('view-container-dnd');
-                    if (moveId && moveId !== this.widget.id) {
-                        console.log('moveBefore', moveId, this.widget.id);
+                    if (moveId && moveId !== this.wrapped.id) {
+                        console.log('moveBefore', moveId, this.wrapped.id);
                     }
                     unstyle(event);
                 }
             }, false)
-        ]);
+        );
     }
 
     protected createContent(): { header: HTMLElement, body: HTMLElement, disposable: Disposable } {
@@ -462,11 +594,11 @@ export class ViewContainerPartWidget2 extends BaseWidget {
 
         const title = document.createElement('span');
         title.classList.add('label', 'noselect');
-        title.innerText = this.widget.title.label;
+        title.innerText = this.wrapped.title.label;
         header.appendChild(title);
 
-        if (ViewContainerPartWidget.is(this.widget)) {
-            for (const { tooltip, execute, className } of this.widget.toolbarElements.filter(e => e.enabled !== false)) {
+        if (ViewContainerPartWidget.is(this.wrapped)) {
+            for (const { tooltip, execute, className } of this.wrapped.toolbarElements.filter(e => e.enabled !== false)) {
                 const toolbarItem = document.createElement('span');
                 toolbarItem.classList.add('element');
                 if (className) {
@@ -490,19 +622,19 @@ export class ViewContainerPartWidget2 extends BaseWidget {
     }
 
     onAfterAttach(msg: Message): void {
-        MessageLoop.sendMessage(this.widget, Widget.Msg.BeforeAttach);
-        if (this.widget.isAttached) {
-            Widget.detach(this.widget);
+        MessageLoop.sendMessage(this.wrapped, Widget.Msg.BeforeAttach);
+        if (this.wrapped.isAttached) {
+            Widget.detach(this.wrapped);
         }
-        Widget.attach(this.widget, this.body);
-        MessageLoop.sendMessage(this.widget, Widget.Msg.AfterAttach);
+        Widget.attach(this.wrapped, this.body);
+        MessageLoop.sendMessage(this.wrapped, Widget.Msg.AfterAttach);
         this.update();
         super.onAfterAttach(msg);
     }
 
     onUpdateRequest(msg: Message): void {
-        if (this.widget.isAttached) {
-            this.widget.update();
+        if (this.wrapped.isAttached) {
+            this.wrapped.update();
         }
         super.onUpdateRequest(msg);
     }
