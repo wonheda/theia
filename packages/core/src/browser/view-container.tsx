@@ -81,7 +81,16 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         return new DisposableCollection(
             Disposable.create(() => this.removeWidget(widget)),
             newPart.onCollapsed(collapsed => this.toggleCollapsed(newPart, collapsed)),
-            newPart.onMoveBefore(moveBeforeThisId => this.moveBefore(newPart.id, moveBeforeThisId))
+            newPart.onMoveBefore(moveBeforeThisId => this.moveBefore(newPart.id, moveBeforeThisId)),
+            newPart.onContextMenu(mouseEvent => {
+                if (mouseEvent.button === 2) {
+                    mouseEvent.preventDefault();
+                    mouseEvent.stopPropagation();
+                    const { contextMenuRenderer } = this.services;
+                    const { x, y } = mouseEvent;
+                    contextMenuRenderer.render(this.contextMenuPath, { x, y });
+                }
+            })
         );
     }
 
@@ -101,15 +110,9 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected createPart(widget: Widget): ViewContainerPart {
-        const { contextMenuRenderer } = this.services;
-        const { contextMenuPath } = this;
         return new ViewContainerPart(
             widget,
             this.id,
-            {
-                contextMenuRenderer,
-                contextMenuPath
-            },
             {
                 collapsed: false,
                 hidden: false
@@ -275,6 +278,7 @@ export class ViewContainerPart extends BaseWidget {
     protected readonly body: HTMLElement;
     protected readonly collapsedEmitter = new Emitter<boolean>();
     protected readonly moveBeforeEmitter = new Emitter<string>();
+    protected readonly contextMenuEmitter = new Emitter<MouseEvent>();
 
     protected collapsed: boolean;
     protected hidden: boolean;
@@ -284,7 +288,6 @@ export class ViewContainerPart extends BaseWidget {
     constructor(
         public readonly wrapped: Widget,
         protected readonly viewContainerId: string,
-        { contextMenuRenderer, contextMenuPath }: { contextMenuRenderer: ContextMenuRenderer, contextMenuPath: MenuPath },
         { collapsed, hidden }: { collapsed: boolean, hidden: boolean } = { collapsed: false, hidden: false }) {
 
         super();
@@ -299,8 +302,9 @@ export class ViewContainerPart extends BaseWidget {
             disposable,
             this.collapsedEmitter,
             this.moveBeforeEmitter,
+            this.contextMenuEmitter,
             this.registerDND(),
-            this.registerContextMenu({ contextMenuRenderer, contextMenuPath })
+            this.registerContextMenu()
         ]);
         this.scrollOptions = {
             suppressScrollX: true,
@@ -318,19 +322,18 @@ export class ViewContainerPart extends BaseWidget {
         return this.moveBeforeEmitter.event;
     }
 
+    get onContextMenu(): Event<MouseEvent> {
+        return this.contextMenuEmitter.event;
+    }
+
     protected getScrollContainer(): HTMLElement {
         return this.body;
     }
 
-    protected registerContextMenu({ contextMenuRenderer, contextMenuPath }: { contextMenuRenderer: ContextMenuRenderer, contextMenuPath: MenuPath }): Disposable {
+    protected registerContextMenu(): Disposable {
         return new DisposableCollection(
             addEventListener(this.header, 'contextmenu', event => {
-                // Secondary button pressed, usually the right button.
-                if (event.button === 2 /* right */) {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    contextMenuRenderer.render(contextMenuPath, event);
-                }
+                this.contextMenuEmitter.fire(event);
             }),
             addEventListener(this.body, 'contextmenu', event => {
                 // Just disabled the native menu.
