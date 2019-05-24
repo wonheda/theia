@@ -30,16 +30,15 @@ import { TheiaSplitLayout } from './shell/theia-split-layout';
 
 export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
-    readonly layout: TheiaSplitLayout;
+    readonly panel: SplitPanel;
 
     constructor(protected readonly services: ViewContainer.Services, ...props: ViewContainer.Prop[]) {
         super();
         this.id = `view-container-widget-${v4()}`;
         this.addClass('theia-view-container');
         const layout = new TheiaSplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: 'vertical' });
-        const panel = new SplitPanel({ layout: this.layout });
-        panel.addClass('split-panel');
-        this.layout = layout;
+        this.panel = new SplitPanel({ layout });
+        this.panel.addClass('split-panel');
         for (const { widget } of props) {
             this.addWidget(widget);
         }
@@ -117,6 +116,10 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         return this.parts;
     }
 
+    public get layout(): TheiaSplitLayout {
+        return this.panel.layout as TheiaSplitLayout;
+    }
+
     protected createPart(widget: Widget): ViewContainerPart {
         return new ViewContainerPart(
             widget,
@@ -180,14 +183,14 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected onResize(msg: Widget.ResizeMessage): void {
-        for (const widget of this.parts) {
+        for (const widget of [this.panel, ...this.parts]) {
             MessageLoop.sendMessage(widget, Widget.ResizeMessage.UnknownSize);
         }
         super.onResize(msg);
     }
 
     protected onUpdateRequest(msg: Message): void {
-        for (const widget of this.parts) {
+        for (const widget of [this.panel, ...this.parts]) {
             widget.update();
         }
         super.onUpdateRequest(msg);
@@ -198,13 +201,13 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         // this.layout.activate();
     }
 
-    // protected onAfterAttach(msg: Message): void {
-    //     if (this.panel.isAttached) {
-    //         Widget.detach(this.panel);
-    //     }
-    //     Widget.attach(this.panel, this.node);
-    //     super.onAfterAttach(msg);
-    // }
+    protected onAfterAttach(msg: Message): void {
+        if (this.panel.isAttached) {
+            Widget.detach(this.panel);
+        }
+        Widget.attach(this.panel, this.node);
+        super.onAfterAttach(msg);
+    }
 
     /**
      * Sugar for `this.layout.iter()`. Returns with the parts, **not** the `wrapped`, original widgets.
