@@ -14,7 +14,8 @@
  * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0 WITH Classpath-exception-2.0
  ********************************************************************************/
 
-import { SplitLayout } from '../widgets';
+import { IIterator, iter, toArray } from '@phosphor/algorithm';
+import { SplitLayout, Widget, LayoutItem } from '../widgets';
 
 export class TheiaSplitLayout extends SplitLayout {
 
@@ -22,6 +23,24 @@ export class TheiaSplitLayout extends SplitLayout {
         // Note: internally, the `widget` argument is not used. See: `node_modules/@phosphor/widgets/lib/splitlayout.js`.
         // tslint:disable-next-line:no-any
         super.moveWidget(fromIndex, toIndex, undefined as any);
+    }
+
+    protected get items(): ReadonlyArray<LayoutItem> {
+        // tslint:disable-next-line:no-any
+        return (this as any)._items as Array<LayoutItem>;
+    }
+
+    iter(): IIterator<Widget> {
+        const widgets = this.items.map(item => item.widget);
+        return iter(widgets);
+    }
+
+    get widgets(): ReadonlyArray<Widget> {
+        return toArray(this.iter());
+    }
+
+    findLayoutItem(widget: Widget): LayoutItem | undefined {
+        return this.items.find(item => item.widget === widget);
     }
 
 }

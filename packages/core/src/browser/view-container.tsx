@@ -44,7 +44,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             this.addWidget(widget);
         }
 
-        const { commandRegistry, menuRegistry } = this.services;
+        const { commandRegistry, menuRegistry, contextMenuRenderer } = this.services;
         commandRegistry.registerCommand({ id: this.globalHideCommandId }, {
             execute: (anchor: Anchor) => {
                 const { x, y } = anchor;
@@ -66,6 +66,13 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             label: 'Hide'
         });
         this.toDispose.pushAll([
+            addEventListener(this.node, 'contextmenu', event => {
+                if (event.button === 2 /* right */ && this.parts.every(part => !!part.isHidden)) {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    contextMenuRenderer.render(this.contextMenuPath, event);
+                }
+            }),
             Disposable.create(() => commandRegistry.unregisterCommand(this.globalHideCommandId)),
             Disposable.create(() => menuRegistry.unregisterMenuAction(this.globalHideCommandId))
         ]);
@@ -83,14 +90,13 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         return new DisposableCollection(
             Disposable.create(() => this.removeWidget(widget)),
             newPart.onCollapsed(collapsed => this.toggleCollapsed(newPart, collapsed)),
-            newPart.onMoveBefore(moveBeforeThisId => this.moveBefore(moveBeforeThisId, newPart.id)),
-            newPart.onContextMenu(mouseEvent => {
-                if (mouseEvent.button === 2) {
-                    mouseEvent.preventDefault();
-                    mouseEvent.stopPropagation();
+            newPart.onMoveBefore(toMoveId => this.moveBefore(toMoveId, newPart.id)),
+            newPart.onContextMenu(event => {
+                if (event.button === 2) {
+                    event.preventDefault();
+                    event.stopPropagation();
                     const { contextMenuRenderer } = this.services;
-                    const { x, y } = mouseEvent;
-                    contextMenuRenderer.render(this.contextMenuPath, { x, y });
+                    contextMenuRenderer.render(this.contextMenuPath, event);
                 }
             })
         );
@@ -153,7 +159,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected toggleVisibility(part: ViewContainerPart): void {
-        this.layout.removeWidget(part);
+        part.setHidden(!part.isHidden);
         console.log('toggleVisibility', part.isHidden, part.id);
     }
 
@@ -166,10 +172,10 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         const toMoveIndex = this.parts.findIndex(part => part.id === toMovedId);
         const moveBeforeThisIndex = this.parts.findIndex(part => part.id === moveBeforeThisId);
         if (toMoveIndex !== -1 && moveBeforeThisIndex !== -1) {
-            // console.log('moving', this.parts[toMoveIndex].wrapped.title.label, 'before', this.parts[moveBeforeThisIndex].wrapped.title.label);
-            // console.log('before move:', this.parts.map(p => p.wrapped.title.label));
-            this.layout.moveWidget(toMoveIndex, Math.max(moveBeforeThisIndex - 1, 0));
-            // console.log('after move:', this.parts.map(p => p.wrapped.title.label));
+            console.log('moving', this.parts[toMoveIndex].wrapped.title.label, 'before', this.parts[moveBeforeThisIndex].wrapped.title.label);
+            console.log('before move:', this.parts.map(p => p.wrapped.title.label).join(', '));
+            this.layout.moveWidget(toMoveIndex, moveBeforeThisIndex);
+            console.log('after move:', this.parts.map(p => p.wrapped.title.label).join(', '));
         }
     }
 
@@ -201,16 +207,20 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     // }
 
     /**
-     * Sugar for `this.layout.widgets`. Returns with the parts, **not** the `wrapped`, original widgets.
+     * Sugar for `this.layout.iter()`. Returns with the parts, **not** the `wrapped`, original widgets.
+     * Do not access `this.layout.widgets` directly, it's a static array.
      */
     protected get parts(): ViewContainerPart[] {
         const parts: ViewContainerPart[] = [];
-        for (const widget of this.layout.widgets) {
-            if (widget instanceof ViewContainerPart) {
-                parts.push(widget);
+        const itr = this.layout.iter();
+        let next = itr.next();
+        while (next) {
+            if (next instanceof ViewContainerPart) {
+                parts.push(next);
             } else {
-                throw new Error(`Expected an instance of ${ViewContainerPart.prototype}. Got ${JSON.stringify(widget)}`);
+                throw new Error(`Expected an instance of ${ViewContainerPart.prototype}. Got ${JSON.stringify(next)}`);
             }
+            next = itr.next();
         }
         return parts;
     }
