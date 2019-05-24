@@ -16,7 +16,7 @@
 
 import { interfaces } from 'inversify';
 import { v4 } from 'uuid';
-import { Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message, SplitPanel, BaseWidget, addEventListener } from './widgets';
+import { Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message, SplitPanel, BaseWidget, addEventListener, SplitLayout } from './widgets';
 import { Event, Emitter } from '../common/event';
 import { Disposable, DisposableCollection } from '../common/disposable';
 import { MaybePromise } from '../common/types';
@@ -34,7 +34,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         super();
         this.id = `view-container-widget-${v4()}`;
         this.addClass('theia-view-container');
-        const layout = new TheiaSplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: 'vertical' });
+        const layout = new TheiaSplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: this.orientation });
         this.panel = new SplitPanel({ layout });
         this.panel.addClass('split-panel');
         for (const { widget } of props) {
@@ -156,7 +156,9 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected toggleCollapsed(part: ViewContainerPart, collapsed: boolean): void {
+        console.log('relative-sizes', this.layout.relativeSizes());
         this.layout.fit(part, collapsed);
+        console.log('relative-sizes', this.layout.relativeSizes());
         console.log('toggleCollapsed', collapsed, part.id);
     }
 
@@ -194,8 +196,16 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         if (this.panel.isAttached) {
             Widget.detach(this.panel);
         }
+        this.layout.orientation = this.orientation;
         Widget.attach(this.panel, this.node);
         super.onAfterAttach(msg);
+    }
+
+    protected get orientation(): SplitLayout.Orientation {
+        if (this.node.closest('#theia-main-content-panel') || this.node.closest('#theia-bottom-content-panel')) {
+            return 'horizontal';
+        }
+        return 'vertical';
     }
 
     /**
