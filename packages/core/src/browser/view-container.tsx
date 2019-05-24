@@ -16,7 +16,7 @@
 
 import { interfaces } from 'inversify';
 import { v4 } from 'uuid';
-import { Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message, SplitPanel, BaseWidget, addEventListener, SplitLayout } from './widgets';
+import { Widget, EXPANSION_TOGGLE_CLASS, COLLAPSED_CLASS, MessageLoop, Message, SplitPanel, BaseWidget, addEventListener } from './widgets';
 import { Event, Emitter } from '../common/event';
 import { Disposable, DisposableCollection } from '../common/disposable';
 import { MaybePromise } from '../common/types';
@@ -25,8 +25,6 @@ import { MenuModelRegistry, MenuPath } from '../common/menu';
 import { ContextMenuRenderer, Anchor } from './context-menu-renderer';
 import { ApplicationShell } from './shell/application-shell';
 import { TheiaSplitLayout } from './shell/theia-split-layout';
-
-// const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
 
 export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
@@ -66,7 +64,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         });
         this.toDispose.pushAll([
             addEventListener(this.node, 'contextmenu', event => {
-                if (event.button === 2 /* right */ && this.parts.every(part => !!part.isHidden)) {
+                if (event.button === 2 && this.parts.every(part => !!part.isHidden)) {
                     event.stopPropagation();
                     event.preventDefault();
                     contextMenuRenderer.render(this.contextMenuPath, event);
@@ -82,7 +80,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         if (widgets.indexOf(widget) !== -1) {
             return Disposable.NULL;
         }
-        const newPart = this.createPart(widget);
+        const newPart = new ViewContainerPart(widget, this.id, { collapsed: false }); // TODO: `collapsed`.
         this.registerPart(newPart);
         this.layout.addWidget(newPart);
         // this.update();
@@ -107,7 +105,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             return false;
         }
         this.unregisterPart(part);
-        // TODO: remove `part` from the `this.panel`.
+        this.layout.removeWidget(part);
         // this.update();
         return true;
     }
@@ -118,16 +116,6 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
     public get layout(): TheiaSplitLayout {
         return this.panel.layout as TheiaSplitLayout;
-    }
-
-    protected createPart(widget: Widget): ViewContainerPart {
-        return new ViewContainerPart(
-            widget,
-            this.id,
-            {
-                collapsed: false,
-                hidden: false
-            });
     }
 
     protected registerPart(toRegister: ViewContainerPart): void {
@@ -151,6 +139,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         menuRegistry.registerMenuAction([...this.contextMenuPath, '1_widgets'], {
             commandId: commandId,
             label: toRegister.wrapped.title.label
+            // order: TODO: the order should be based on the part order.
         });
     }
 
@@ -167,7 +156,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected toggleCollapsed(part: ViewContainerPart, collapsed: boolean): void {
-        // TODO: do we need `collapsed`?
+        this.layout.fit(part, collapsed);
         console.log('toggleCollapsed', collapsed, part.id);
     }
 
@@ -198,7 +187,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
     protected onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
-        // this.layout.activate();
+        this.panel.activate();
     }
 
     protected onAfterAttach(msg: Message): void {
@@ -211,7 +200,6 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
     /**
      * Sugar for `this.layout.iter()`. Returns with the parts, **not** the `wrapped`, original widgets.
-     * Do not access `this.layout.widgets` directly, it's a static array.
      */
     protected get parts(): ViewContainerPart[] {
         const parts: ViewContainerPart[] = [];
@@ -308,13 +296,12 @@ export class ViewContainerPart extends BaseWidget {
     constructor(
         public readonly wrapped: Widget,
         protected readonly viewContainerId: string,
-        { collapsed, hidden }: { collapsed: boolean, hidden: boolean } = { collapsed: false, hidden: false }) {
+        { collapsed }: { collapsed: boolean } = { collapsed: false }) {
 
         super();
         this.id = `${this.viewContainerId}--${wrapped.id}`;
         this.addClass('part');
         this.collapsed = collapsed;
-        this.hidden = hidden;
         const { header, body, disposable } = this.createContent();
         this.header = header;
         this.body = body;
@@ -331,7 +318,9 @@ export class ViewContainerPart extends BaseWidget {
             minScrollbarLength: 35
         };
         this.node.tabIndex = 0;
-        this.setHidden(this.hidden);
+        if (collapsed) {
+            this.collapsedEmitter.fire(collapsed);
+        }
     }
 
     get onCollapsed(): Event<boolean> {
@@ -521,7 +510,7 @@ export namespace ViewContainerPart {
 export interface ViewContainerPartToolbarElement {
     /** default true */
     readonly enabled?: boolean
-    readonly className: string
+    readonly className: string // TODO: `string | string[]`
     readonly tooltip: string
     // tslint:disable-next-line:no-any
     execute(): any

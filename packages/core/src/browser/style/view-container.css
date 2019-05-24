@@ -32,6 +32,7 @@
 .theia-view-container .p-SplitPanel > .p-SplitPanel-handle:after {
     background-color: var(--theia-menu-color0);
     min-height: 2px;
+    min-width: 2px
 }
 
 .theia-view-container .p-SplitPanel-handle {
