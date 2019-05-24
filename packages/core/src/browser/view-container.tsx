@@ -24,20 +24,22 @@ import { CommandRegistry } from '../common/command';
 import { MenuModelRegistry, MenuPath } from '../common/menu';
 import { ContextMenuRenderer, Anchor } from './context-menu-renderer';
 import { ApplicationShell } from './shell/application-shell';
+import { TheiaSplitLayout } from './shell/theia-split-layout';
 
 // const backgroundColor = () => '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
 
 export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
-    protected readonly panel: SplitPanel;
+    readonly layout: TheiaSplitLayout;
 
     constructor(protected readonly services: ViewContainer.Services, ...props: ViewContainer.Prop[]) {
         super();
         this.id = `view-container-widget-${v4()}`;
         this.addClass('theia-view-container');
-        const layout = new SplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: 'vertical' });
-        this.panel = new SplitPanel({ layout });
-        this.panel.addClass('split-panel');
+        const layout = new TheiaSplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: 'vertical' });
+        const panel = new SplitPanel({ layout: this.layout });
+        panel.addClass('split-panel');
+        this.layout = layout;
         for (const { widget } of props) {
             this.addWidget(widget);
         }
@@ -76,12 +78,12 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         }
         const newPart = this.createPart(widget);
         this.registerPart(newPart);
-        this.panel.addWidget(newPart);
+        this.layout.addWidget(newPart);
         // this.update();
         return new DisposableCollection(
             Disposable.create(() => this.removeWidget(widget)),
             newPart.onCollapsed(collapsed => this.toggleCollapsed(newPart, collapsed)),
-            newPart.onMoveBefore(moveBeforeThisId => this.moveBefore(newPart.id, moveBeforeThisId)),
+            newPart.onMoveBefore(moveBeforeThisId => this.moveBefore(moveBeforeThisId, newPart.id)),
             newPart.onContextMenu(mouseEvent => {
                 if (mouseEvent.button === 2) {
                     mouseEvent.preventDefault();
@@ -151,6 +153,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected toggleVisibility(part: ViewContainerPart): void {
+        this.layout.removeWidget(part);
         console.log('toggleVisibility', part.isHidden, part.id);
     }
 
@@ -160,18 +163,25 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected moveBefore(toMovedId: string, moveBeforeThisId: string): void {
-        console.log('moveBefore', toMovedId, moveBeforeThisId);
+        const toMoveIndex = this.parts.findIndex(part => part.id === toMovedId);
+        const moveBeforeThisIndex = this.parts.findIndex(part => part.id === moveBeforeThisId);
+        if (toMoveIndex !== -1 && moveBeforeThisIndex !== -1) {
+            // console.log('moving', this.parts[toMoveIndex].wrapped.title.label, 'before', this.parts[moveBeforeThisIndex].wrapped.title.label);
+            // console.log('before move:', this.parts.map(p => p.wrapped.title.label));
+            this.layout.moveWidget(toMoveIndex, Math.max(moveBeforeThisIndex - 1, 0));
+            // console.log('after move:', this.parts.map(p => p.wrapped.title.label));
+        }
     }
 
     protected onResize(msg: Widget.ResizeMessage): void {
-        for (const widget of [this.panel, ...this.parts]) {
+        for (const widget of this.parts) {
             MessageLoop.sendMessage(widget, Widget.ResizeMessage.UnknownSize);
         }
         super.onResize(msg);
     }
 
     protected onUpdateRequest(msg: Message): void {
-        for (const widget of [this.panel, ...this.parts]) {
+        for (const widget of this.parts) {
             widget.update();
         }
         super.onUpdateRequest(msg);
@@ -179,30 +189,27 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
     protected onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
-        this.panel.activate();
+        // this.layout.activate();
     }
 
-    protected onAfterAttach(msg: Message): void {
-        if (this.panel.isAttached) {
-            Widget.detach(this.panel);
-        }
-        Widget.attach(this.panel, this.node);
-        super.onAfterAttach(msg);
-    }
+    // protected onAfterAttach(msg: Message): void {
+    //     if (this.panel.isAttached) {
+    //         Widget.detach(this.panel);
+    //     }
+    //     Widget.attach(this.panel, this.node);
+    //     super.onAfterAttach(msg);
+    // }
 
     /**
-     * Sugar for `this.panel.children()`. Returns with the parts, **not** the `wrapped`, original widgets.
+     * Sugar for `this.layout.widgets`. Returns with the parts, **not** the `wrapped`, original widgets.
      */
     protected get parts(): ViewContainerPart[] {
         const parts: ViewContainerPart[] = [];
-        const itr = this.panel.children();
-        let next = itr.next();
-        while (next) {
-            if (next instanceof ViewContainerPart) {
-                parts.push(next);
-                next = itr.next();
+        for (const widget of this.layout.widgets) {
+            if (widget instanceof ViewContainerPart) {
+                parts.push(widget);
             } else {
-                throw new Error(`Expected an instance of ${ViewContainerPart.prototype}. Got ${JSON.stringify(next)}`);
+                throw new Error(`Expected an instance of ${ViewContainerPart.prototype}. Got ${JSON.stringify(widget)}`);
             }
         }
         return parts;
@@ -388,7 +395,7 @@ export class ViewContainerPart extends BaseWidget {
                 const { dataTransfer } = event;
                 if (dataTransfer) {
                     const moveId = dataTransfer.getData('view-container-dnd');
-                    if (moveId && moveId !== this.wrapped.id) {
+                    if (moveId && moveId !== this.id) {
                         this.moveBeforeEmitter.fire(moveId);
                     }
                     unstyle(event);
