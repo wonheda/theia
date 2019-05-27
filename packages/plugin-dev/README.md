@@ -3,7 +3,7 @@
 See [here](https://www.theia-ide.org/doc/index.html) for a detailed documentation.
 
 ## Contribution points:
- - Hosted Istance uri post processor
+ - Hosted Instance uri post processor
 
 ## License
 - [Eclipse Public License 2.0](http://www.eclipse.org/legal/epl-2.0/)
