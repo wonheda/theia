@@ -1,7 +1,7 @@
 {
-  "name": "@theia/plugin-ext",
+  "name": "@theia/plugin-dev",
   "version": "0.6.0",
-  "description": "Theia - Plugin Extension",
+  "description": "Theia - Plugin Development Extension",
   "main": "lib/common/index.js",
   "typings": "lib/common/index.d.ts",
   "dependencies": {
@@ -14,7 +14,9 @@
     "@theia/messages": "^0.6.0",
     "@theia/monaco": "^0.6.0",
     "@theia/navigator": "^0.6.0",
+    "@theia/output": "^0.6.0",
     "@theia/plugin": "^0.6.0",
+    "@theia/plugin-ext": "^0.6.0",
     "@theia/preferences": "^0.6.0",
     "@theia/search-in-workspace": "^0.6.0",
     "@theia/task": "^0.6.0",
@@ -23,6 +25,7 @@
     "getmac": "^1.4.6",
     "jsonc-parser": "^2.0.2",
     "lodash.clonedeep": "^4.5.0",
+    "ps-tree": "1.1.0",
     "uuid": "^3.2.1",
     "vscode-debugprotocol": "^1.32.0",
     "vscode-uri": "^1.0.1"
@@ -32,9 +35,9 @@
   },
   "theiaExtensions": [
     {
-      "backend": "lib/plugin-ext-backend-module",
-      "backendElectron": "lib/plugin-ext-backend-electron-module",
-      "frontend": "lib/plugin-ext-frontend-module"
+      "backend": "lib/node/plugin-dev-backend-module",
+      "backendElectron": "lib/node-electron/plugin-dev-electron-backend-module",
+      "frontend": "lib/browser/plugin-dev-frontend-module"
     }
   ],
   "keywords": [
