@@ -31,15 +31,15 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     readonly panel: SplitPanel;
     readonly partHeight = new Map<ViewContainerPart, number>();
 
-    constructor(protected readonly services: ViewContainer.Services, ...props: ViewContainer.Prop[]) {
+    constructor(protected readonly services: ViewContainer.Services, ...inputs: { widget: Widget, options?: ViewContainer.Factory.WidgetOptions }[]) {
         super();
         this.id = `view-container-widget-${v4()}`;
         this.addClass('theia-view-container');
         const layout = new TheiaSplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: this.orientation });
         this.panel = new SplitPanel({ layout });
         this.panel.addClass('split-panel');
-        for (const { widget } of props) {
-            this.addWidget(widget);
+        for (const { widget, options } of inputs) {
+            this.addWidget(widget, options);
         }
 
         const { commandRegistry, menuRegistry, contextMenuRenderer } = this.services;
@@ -158,6 +158,11 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected toggleCollapsed(part: ViewContainerPart): void {
+        // Cannot collapse with horizontal orientation.
+        if (this.orientation === 'horizontal') {
+            return;
+        }
+
         const index = this.parts.indexOf(part);
         if (index === -1) {
             return;
@@ -211,9 +216,10 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
                 }
             }
         } else {
-            const height = this.partHeight.get(part);
+            let height = this.partHeight.get(part);
             this.partHeight.delete(part);
             if (height === undefined) {
+                height = 100;
                 console.log(`${part.id} does not have a previous height.`);
             } else {
                 if (index === 0) {
@@ -251,8 +257,6 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         for (const widget of [this.panel, ...this.parts]) {
             widget.update();
         }
-        const handles = () => this.panel.handles.map((h, i) => `${i} [collapsed: ${this.parts[i].collapsed}]: ${h.offsetTop}`);
-        console.log('after update: handles', handles());
         super.onUpdateRequest(msg);
     }
 
@@ -278,7 +282,9 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     /**
-     * Sugar for `this.layout.iter()`. Returns with the parts, **not** the `wrapped`, original widgets.
+     * Sugar for `this.layout.iter()`.
+     *
+     * Returns with the parts, **not** the `wrapped`, original widgets.
      */
     protected get parts(): ViewContainerPart[] {
         const parts: ViewContainerPart[] = [];
@@ -311,11 +317,6 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
 export namespace ViewContainer {
 
-    export interface Prop {
-        readonly widget: Widget;
-        readonly options?: ViewContainer.Factory.WidgetOptions;
-    }
-
     export interface Services {
         readonly contextMenuRenderer: ContextMenuRenderer;
         readonly commandRegistry: CommandRegistry;
@@ -326,7 +327,9 @@ export namespace ViewContainer {
     export interface Factory {
         (...widgets: Factory.WidgetDescriptor[]): ViewContainer;
     }
+
     export namespace Factory {
+
         export interface WidgetOptions {
 
             /**
@@ -349,6 +352,7 @@ export namespace ViewContainer {
 
             readonly focusCommand?: { id: string, keybindings?: string };
         }
+
         export interface WidgetDescriptor {
 
             // tslint:disable-next-line:no-any
@@ -356,6 +360,7 @@ export namespace ViewContainer {
 
             readonly options?: WidgetOptions;
         }
+
     }
 }
 

@@ -246,16 +246,16 @@ export const frontendApplicationModule = new ContainerModule((bind, unbind, isBo
             commandRegistry: container.get(CommandRegistry),
             menuRegistry: container.get(MenuModelRegistry)
         };
-        const props: ViewContainer.Prop[] = [];
+        const inputs: Array<{ widget: Widget, options?: ViewContainer.Factory.WidgetOptions }> = [];
         for (const descriptor of descriptors) {
             const { widget, options } = descriptor;
             if (widget instanceof Widget) {
-                props.push({ widget, options });
+                inputs.push({ widget, options });
             } else {
-                props.push({ widget: container.get(widget), options });
+                inputs.push({ widget: container.get(widget), options });
             }
         }
-        return new ViewContainer(services, ...props);
+        return new ViewContainer(services, ...inputs);
     });
 });
 
