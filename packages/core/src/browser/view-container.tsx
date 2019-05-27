@@ -154,59 +154,55 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         part.setHidden(!part.isHidden);
     }
 
+    protected map = new Map<ViewContainerPart, number>();
     protected toggleCollapsed(part: ViewContainerPart): void {
         const index = this.parts.indexOf(part);
         if (index === -1) {
             return;
         }
-        const handles = () => this.panel.handles.map((h, i) => `${i} [collapsed: ${this.parts[i].collapsed}]: ${h.offsetTop}`);
-        console.log('before collapse: handles', handles());
+
         if (part.collapsed) {
-            // The previous handle of the first item always considered as closed.
-            const prevCollapsed = index === 0 ? true : this.parts[index - 1].collapsed;
-            // If the previous part is collapsed, we move the handle of the next open part to the previous handle plus the header height.
-            if (prevCollapsed) {
-                let handleToMove = index === 0 ? 0 : this.parts.findIndex((p, i) => i >= index && !p.collapsed);
-                if (handleToMove === -1) {
-                    handleToMove = index;
+
+            let beforeOpenIndex = -1;
+            for (let i = index - 1; i >= 0; i--) {
+                if (!this.parts[i].collapsed) {
+                    beforeOpenIndex = i;
+                    break;
                 }
-                // The last handle has `display: none`, we cannot move it, instead we adjust the preceding handle.
-                if (handleToMove === this.parts.length - 1) {
-                    handleToMove = this.parts.findIndex((p, i) => i <= index && !p.collapsed);
-                    if (handleToMove === -1) {
-                        handleToMove = index;
-                    }
-                    const prevHandlePosition = this.panel.handles[handleToMove].offsetTop;
-                    this.layout.moveHandle(handleToMove - 1, prevHandlePosition + ViewContainerPart.HEADER_HEIGHT);
-                } else {
-                    const prevHandlePosition = handleToMove === 0 ? 0 : this.panel.handles[handleToMove].offsetTop;
-                    const newPosition = prevHandlePosition + ViewContainerPart.HEADER_HEIGHT;
-                    this.layout.moveHandle(handleToMove, newPosition);
-                }
+            }
+            // If there is a preceding open handler we stretch that one.
+            if (beforeOpenIndex !== -1) {
+                const handlePosition = index === this.parts.length - 1 ? this.panel.node.offsetHeight : this.layout.handles[index].offsetTop;
+                const position = handlePosition - this.layout.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
+                this.layout.moveHandle(beforeOpenIndex, position);
             } else {
-                // Is the previous is open, we move the previous handle position to the current handles position minus the header height.
-                const nextHandlePosition = index === this.parts.length - 1
-                    ? this.panel.node.clientHeight
-                    : this.panel.handles[index].offsetTop - this.panel.handles[index].offsetHeight;
-                const newPosition = nextHandlePosition - ViewContainerPart.HEADER_HEIGHT;
-                this.layout.moveHandle(index - 1, newPosition);
+                // Otherwise, we push the current one down.
+                const position = index === 0 ? ViewContainerPart.HEADER_HEIGHT : this.layout.handles[index - 1].offsetHeight + ViewContainerPart.HEADER_HEIGHT;
+                this.layout.moveHandle(index, position);
             }
-            // If the current collapse closes all parts expect one, the remaining one must stretch the available space.
+
             const openedParts = this.parts.filter(p => !p.collapsed);
-            if (openedParts.length === 1) {
-                const toStretch = this.parts.indexOf(openedParts[0]);
-                if (toStretch !== -1) {
-                    this.layout.moveHandle(toStretch, this.panel.node.offsetHeight -
-                        (this.parts.length - 1 - toStretch) * ViewContainerPart.HEADER_HEIGHT + this.panel.handles[toStretch].offsetHeight);
-                }
-            }
             if (openedParts.length === 0) {
                 for (let i = 0; i < this.parts.length; i++) {
-                    this.layout.moveHandle(i, ViewContainerPart.HEADER_HEIGHT + this.panel.handles[i].offsetHeight);
+                    const position = ViewContainerPart.HEADER_HEIGHT + this.panel.handles[i].offsetHeight;
+                    this.layout.moveHandle(i, position);
+                }
+            } else if (openedParts.length === 1) {
+                const toStretchIndex = this.parts.indexOf(openedParts[0]);
+                if (toStretchIndex !== -1) {
+                    if (toStretchIndex === 0) {
+                        const position = this.panel.node.offsetHeight - ((this.parts.length - 1) * ViewContainerPart.HEADER_HEIGHT);
+                        this.layout.moveHandle(toStretchIndex, position);
+                    } else if (toStretchIndex === this.parts.length - 1) {
+                        const position = (this.parts.length - 1) * ViewContainerPart.HEADER_HEIGHT;
+                        this.layout.moveHandle(toStretchIndex - 1, position);
+                    } else {
+                        const position = toStretchIndex * ViewContainerPart.HEADER_HEIGHT;
+                        this.layout.moveHandle(toStretchIndex - 1, position);
+                    }
                 }
             }
         }
-        console.log('after collapse: handles', handles());
     }
 
     protected moveBefore(toMovedId: string, moveBeforeThisId: string): void {
