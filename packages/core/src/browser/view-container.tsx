@@ -29,6 +29,7 @@ import { TheiaSplitLayout } from './shell/theia-split-layout';
 export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
     readonly panel: SplitPanel;
+    readonly partHeight = new Map<ViewContainerPart, number>();
 
     constructor(protected readonly services: ViewContainer.Services, ...props: ViewContainer.Prop[]) {
         super();
@@ -71,7 +72,8 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
                 }
             }),
             Disposable.create(() => commandRegistry.unregisterCommand(this.globalHideCommandId)),
-            Disposable.create(() => menuRegistry.unregisterMenuAction(this.globalHideCommandId))
+            Disposable.create(() => menuRegistry.unregisterMenuAction(this.globalHideCommandId)),
+            Disposable.create(() => this.partHeight.clear())
         ]);
     }
 
@@ -148,13 +150,13 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         const commandId = this.toggleVisibilityCommandId(part);
         commandRegistry.unregisterCommand(commandId);
         menuRegistry.unregisterMenuAction(commandId);
+        this.partHeight.delete(part);
     }
 
     protected toggleVisibility(part: ViewContainerPart): void {
         part.setHidden(!part.isHidden);
     }
 
-    protected map = new Map<ViewContainerPart, number>();
     protected toggleCollapsed(part: ViewContainerPart): void {
         const index = this.parts.indexOf(part);
         if (index === -1) {
@@ -163,6 +165,9 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
         if (part.collapsed) {
 
+            // Store the height before we collapse it.
+            this.partHeight.set(part, part.node.clientHeight);
+
             let beforeOpenIndex = -1;
             for (let i = index - 1; i >= 0; i--) {
                 if (!this.parts[i].collapsed) {
@@ -170,6 +175,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
                     break;
                 }
             }
+
             // If there is a preceding open handler we stretch that one.
             if (beforeOpenIndex !== -1) {
                 const handlePosition = index === this.parts.length - 1 ? this.panel.node.offsetHeight : this.layout.handles[index].offsetTop;
@@ -183,11 +189,13 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
             const openedParts = this.parts.filter(p => !p.collapsed);
             if (openedParts.length === 0) {
+                // Collapse all and move all handlers up to the top.
                 for (let i = 0; i < this.parts.length; i++) {
                     const position = ViewContainerPart.HEADER_HEIGHT + this.panel.handles[i].offsetHeight;
                     this.layout.moveHandle(i, position);
                 }
             } else if (openedParts.length === 1) {
+                // Collapse all and the stretch the space for the single open part.
                 const toStretchIndex = this.parts.indexOf(openedParts[0]);
                 if (toStretchIndex !== -1) {
                     if (toStretchIndex === 0) {
@@ -199,6 +207,25 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
                     } else {
                         const position = toStretchIndex * ViewContainerPart.HEADER_HEIGHT;
                         this.layout.moveHandle(toStretchIndex - 1, position);
+                    }
+                }
+            }
+        } else {
+            const height = this.partHeight.get(part);
+            this.partHeight.delete(part);
+            if (height === undefined) {
+                console.log(`${part.id} does not have a previous height.`);
+            } else {
+                if (index === 0) {
+                    this.layout.moveHandle(index, height);
+                } else if (index === this.parts.length - 1) {
+                    this.layout.moveHandle(index - 1, this.panel.node.offsetHeight - this.layout.handles[index - 1].clientHeight - height);
+                } else {
+                    // TODO: !!!
+                    if (this.parts[index - 1].collapsed) {
+                        this.layout.moveHandle(index, this.layout.handles[index].offsetTop + height);
+                    } else {
+                        this.layout.moveHandle(index - 1, this.layout.handles[index - 1].offsetTop - height);
                     }
                 }
             }
