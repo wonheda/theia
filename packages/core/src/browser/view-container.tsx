@@ -183,6 +183,31 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             return result === -1 ? this.parts.length - 1 : result;
         };
 
+        const animate = (handleIndex: number, targetPosition: number) => {
+            // tslint:disable-next-line:no-any
+            if ((window as any).foo_bar === true) {
+                this.layout.moveHandle(handleIndex, targetPosition);
+            } else {
+                const start = handlePos(handleIndex);
+                const end = targetPosition;
+                const done = (f: number, t: number) => start < end ? f >= t : t >= f;
+                const step = () => start < end ? 40 : -40;
+                const moveHandle = (p: number) => new Promise<void>(resolve => {
+                    this.layout.moveHandle(handleIndex, p);
+                    resolve();
+                });
+                let currentPosition = start;
+                const next = () => {
+                    if (!done(currentPosition, end)) {
+                        moveHandle(currentPosition += step()).then(() => {
+                            window.requestAnimationFrame(next);
+                        });
+                    }
+                };
+                next();
+            }
+        };
+
         if (part.collapsed) {
 
             // Store the height before we collapse it.
@@ -192,11 +217,11 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             if (prevExpandedIndex !== -1) {
                 const handlePosition = handlePos(index);
                 const position = handlePosition - this.layout.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
-                this.layout.moveHandle(prevExpandedIndex, position);
+                animate(prevExpandedIndex, position);
             } else {
                 const nextExpandedIndex = nextExpanded(index);
                 const position = prevHandlePos(index) + ((nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT);
-                this.layout.moveHandle(nextExpandedIndex - 1, position);
+                animate(nextExpandedIndex - 1, position);
             }
 
         } else {
