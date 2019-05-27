@@ -86,7 +86,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         // this.update();
         return new DisposableCollection(
             Disposable.create(() => this.removeWidget(widget)),
-            newPart.onCollapsed(collapsed => this.toggleCollapsed(newPart, collapsed)),
+            newPart.onCollapsed(() => this.toggleCollapsed(newPart)),
             newPart.onMoveBefore(toMoveId => this.moveBefore(toMoveId, newPart.id)),
             newPart.onContextMenu(event => {
                 if (event.button === 2) {
@@ -152,24 +152,68 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
 
     protected toggleVisibility(part: ViewContainerPart): void {
         part.setHidden(!part.isHidden);
-        console.log('toggleVisibility', part.isHidden, part.id);
     }
 
-    protected toggleCollapsed(part: ViewContainerPart, collapsed: boolean): void {
-        console.log('relative-sizes', this.layout.relativeSizes());
-        this.layout.fit(part, collapsed);
-        console.log('relative-sizes', this.layout.relativeSizes());
-        console.log('toggleCollapsed', collapsed, part.id);
+    protected toggleCollapsed(part: ViewContainerPart): void {
+        const index = this.parts.indexOf(part);
+        if (index === -1) {
+            return;
+        }
+        const handles = () => this.panel.handles.map((h, i) => `${i} [collapsed: ${this.parts[i].collapsed}]: ${h.offsetTop}`);
+        console.log('before collapse: handles', handles());
+        if (part.collapsed) {
+            // The previous handle of the first item always considered as closed.
+            const prevCollapsed = index === 0 ? true : this.parts[index - 1].collapsed;
+            // If the previous part is collapsed, we move the handle of the next open part to the previous handle plus the header height.
+            if (prevCollapsed) {
+                let handleToMove = index === 0 ? 0 : this.parts.findIndex((p, i) => i >= index && !p.collapsed);
+                if (handleToMove === -1) {
+                    handleToMove = index;
+                }
+                // The last handle has `display: none`, we cannot move it, instead we adjust the preceding handle.
+                if (handleToMove === this.parts.length - 1) {
+                    handleToMove = this.parts.findIndex((p, i) => i <= index && !p.collapsed);
+                    if (handleToMove === -1) {
+                        handleToMove = index;
+                    }
+                    const prevHandlePosition = this.panel.handles[handleToMove].offsetTop;
+                    this.layout.moveHandle(handleToMove - 1, prevHandlePosition + ViewContainerPart.HEADER_HEIGHT);
+                } else {
+                    const prevHandlePosition = handleToMove === 0 ? 0 : this.panel.handles[handleToMove].offsetTop;
+                    const newPosition = prevHandlePosition + ViewContainerPart.HEADER_HEIGHT;
+                    this.layout.moveHandle(handleToMove, newPosition);
+                }
+            } else {
+                // Is the previous is open, we move the previous handle position to the current handles position minus the header height.
+                const nextHandlePosition = index === this.parts.length - 1
+                    ? this.panel.node.clientHeight
+                    : this.panel.handles[index].offsetTop - this.panel.handles[index].offsetHeight;
+                const newPosition = nextHandlePosition - ViewContainerPart.HEADER_HEIGHT;
+                this.layout.moveHandle(index - 1, newPosition);
+            }
+            // If the current collapse closes all parts expect one, the remaining one must stretch the available space.
+            const openedParts = this.parts.filter(p => !p.collapsed);
+            if (openedParts.length === 1) {
+                const toStretch = this.parts.indexOf(openedParts[0]);
+                if (toStretch !== -1) {
+                    this.layout.moveHandle(toStretch, this.panel.node.offsetHeight -
+                        (this.parts.length - 1 - toStretch) * ViewContainerPart.HEADER_HEIGHT + this.panel.handles[toStretch].offsetHeight);
+                }
+            }
+            if (openedParts.length === 0) {
+                for (let i = 0; i < this.parts.length; i++) {
+                    this.layout.moveHandle(i, ViewContainerPart.HEADER_HEIGHT + this.panel.handles[i].offsetHeight);
+                }
+            }
+        }
+        console.log('after collapse: handles', handles());
     }
 
     protected moveBefore(toMovedId: string, moveBeforeThisId: string): void {
         const toMoveIndex = this.parts.findIndex(part => part.id === toMovedId);
         const moveBeforeThisIndex = this.parts.findIndex(part => part.id === moveBeforeThisId);
         if (toMoveIndex !== -1 && moveBeforeThisIndex !== -1) {
-            console.log('moving', this.parts[toMoveIndex].wrapped.title.label, 'before', this.parts[moveBeforeThisIndex].wrapped.title.label);
-            console.log('before move:', this.parts.map(p => p.wrapped.title.label).join(', '));
             this.layout.moveWidget(toMoveIndex, moveBeforeThisIndex);
-            console.log('after move:', this.parts.map(p => p.wrapped.title.label).join(', '));
         }
     }
 
@@ -184,6 +228,8 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         for (const widget of [this.panel, ...this.parts]) {
             widget.update();
         }
+        const handles = () => this.panel.handles.map((h, i) => `${i} [collapsed: ${this.parts[i].collapsed}]: ${h.offsetTop}`);
+        console.log('after update: handles', handles());
         super.onUpdateRequest(msg);
     }
 
@@ -219,7 +265,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             if (next instanceof ViewContainerPart) {
                 parts.push(next);
             } else {
-                throw new Error(`Expected an instance of ${ViewContainerPart.prototype}. Got ${JSON.stringify(next)}`);
+                throw new Error(`Expected an instance of ${ViewContainerPart.prototype}. Got ${JSON.stringify(next)} instead.`);
             }
             next = itr.next();
         }
@@ -292,16 +338,24 @@ export namespace ViewContainer {
 
 export class ViewContainerPart extends BaseWidget {
 
+    /**
+     * Make sure to adjust the `line-height` of the `.theia-view-container .part .header` CSS class when modifying this, and vice versa.
+     */
+    static HEADER_HEIGHT = 22;
+
     protected readonly header: HTMLElement;
     protected readonly body: HTMLElement;
     protected readonly collapsedEmitter = new Emitter<boolean>();
     protected readonly moveBeforeEmitter = new Emitter<string>();
     protected readonly contextMenuEmitter = new Emitter<MouseEvent>();
 
-    protected collapsed: boolean;
-    protected hidden: boolean;
-    // This is a workaround for not being able to sniff into the `event.dataTransfer.getData` value when `dragover` due to security reasons.
-    protected canBeDropTarget: boolean = true;
+    protected _collapsed: boolean;
+    /**
+     * Self cannot be a drop target. When the drag event starts, we disable the current part as a possible drop target.
+     *
+     * This is a workaround for not being able to sniff into the `event.dataTransfer.getData` value when `dragover` due to security reasons.
+     */
+    protected canBeDropTarget = true;
 
     constructor(
         public readonly wrapped: Widget,
@@ -311,7 +365,7 @@ export class ViewContainerPart extends BaseWidget {
         super();
         this.id = `${this.viewContainerId}--${wrapped.id}`;
         this.addClass('part');
-        this.collapsed = collapsed;
+        this._collapsed = collapsed;
         const { header, body, disposable } = this.createContent();
         this.header = header;
         this.body = body;
@@ -325,12 +379,16 @@ export class ViewContainerPart extends BaseWidget {
         ]);
         this.scrollOptions = {
             suppressScrollX: true,
-            minScrollbarLength: 35
+            minScrollbarLength: 35 // TODO: Adjust this?
         };
         this.node.tabIndex = 0;
         if (collapsed) {
             this.collapsedEmitter.fire(collapsed);
         }
+    }
+
+    get collapsed(): boolean {
+        return this._collapsed;
     }
 
     get onCollapsed(): Event<boolean> {
@@ -436,21 +494,20 @@ export class ViewContainerPart extends BaseWidget {
         const header = document.createElement('div');
         header.classList.add('theia-header', 'header');
         disposable.push(addEventListener(header, 'click', () => {
-            this.collapsed = !this.collapsed;
-            // TODO: do we really need this? Cannot we hide the `widget`? Can we pass in container instead?
-            this.collapsedEmitter.fire(this.collapsed);
-            this.body.style.display = this.collapsed ? 'none' : 'block';
+            this._collapsed = !this._collapsed;
+            this.body.style.display = this._collapsed ? 'none' : 'block';
             // tslint:disable-next-line:no-shadowed-variable
             const toggleIcon = this.header.querySelector(`span.${EXPANSION_TOGGLE_CLASS}`);
             if (toggleIcon) {
                 toggleIcon.classList.toggle(COLLAPSED_CLASS);
             }
             this.update();
+            this.collapsedEmitter.fire(this._collapsed);
         }));
 
         const toggleIcon = document.createElement('span');
         toggleIcon.classList.add(EXPANSION_TOGGLE_CLASS);
-        if (this.collapsed) {
+        if (this._collapsed) {
             toggleIcon.classList.add(COLLAPSED_CLASS);
         }
         header.appendChild(toggleIcon);
@@ -465,7 +522,7 @@ export class ViewContainerPart extends BaseWidget {
                 const toolbarItem = document.createElement('span');
                 toolbarItem.classList.add('element');
                 if (className) {
-                    // XXX: `className` should be `MaybeArray<string>` instead.
+                    // TODO: `className` should be `MaybeArray<string>` or `string | string[]` instead.
                     toolbarItem.classList.add(...className.split(' '));
                 }
                 toolbarItem.title = tooltip;
