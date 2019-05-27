@@ -193,6 +193,16 @@ export class TaskService implements TaskConfigurationClient {
         return this.taskServer.getTasks(this.getContext());
     }
 
+    /**
+     * Get the running task, based on task id.
+     *
+     * @param id the task id.
+     */
+    async getRunningTask(id: number): Promise<TaskInfo | undefined> {
+        const tasks: TaskInfo[] = await this.getRunningTasks();
+        return tasks.find(info => id === info.taskId);
+    }
+
     /** Returns an array of task types that are registered, including the default types */
     getRegisteredTaskTypes(): Promise<string[]> {
         return this.taskServer.getRegisteredTaskTypes();
@@ -308,6 +318,7 @@ export class TaskService implements TaskConfigurationClient {
     }
 
     async attach(terminalId: number, taskId: number): Promise<void> {
+        const taskInfo: TaskInfo | undefined = await this.getRunningTask(taskId);
         // create terminal widget to display an execution output of a Task that was launched as a command inside a shell
         const widget = <TerminalWidget>await this.widgetManager.getOrCreateWidget(
             TERMINAL_WIDGET_FACTORY_ID,
@@ -315,6 +326,9 @@ export class TaskService implements TaskConfigurationClient {
                 created: new Date().toString(),
                 id: 'task-' + taskId,
                 caption: `Task #${taskId}`,
+                title: taskInfo
+                    ? `Task: ${taskInfo.config.label}`
+                    : `Task: #${taskId}`,
                 label: `Task #${taskId}`,
                 destroyTermOnClose: true
             }
