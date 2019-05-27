@@ -168,33 +168,34 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             return;
         }
 
+        const prevHandlePos = (i: number) => i === 0 ? 0 : this.layout.handles[i - 1].offsetTop;
+        const handlePos = (i: number) => i === this.parts.length - 1 ? this.panel.node.offsetHeight : this.layout.handles[i].offsetTop;
+        const prevExpanded = (from: number) => {
+            for (let i = from - 1; i >= 0; i--) {
+                if (!this.parts[i].collapsed) {
+                    return i;
+                }
+            }
+            return -1;
+        };
+        const nextExpanded = (from: number) => {
+            const result = this.parts.findIndex((p, i) => i > from && !p.collapsed);
+            return result === -1 ? this.parts.length - 1 : result;
+        };
+
         if (part.collapsed) {
 
             // Store the height before we collapse it.
             this.partHeight.set(part, part.node.clientHeight);
 
-            let prevExpandedIndex = -1;
-            for (let i = index - 1; i >= 0; i--) {
-                if (!this.parts[i].collapsed) {
-                    prevExpandedIndex = i;
-                    break;
-                }
-            }
-
+            const prevExpandedIndex = prevExpanded(index);
             if (prevExpandedIndex !== -1) {
-                const handlePosition = index === this.parts.length - 1 ? this.panel.node.offsetHeight : this.layout.handles[index].offsetTop;
+                const handlePosition = handlePos(index);
                 const position = handlePosition - this.layout.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
                 this.layout.moveHandle(prevExpandedIndex, position);
             } else {
-                let nextExpandedIndex = this.parts.length - 1;
-                for (let i = index; i < this.parts.length; i++) {
-                    if (!this.parts[i].collapsed) {
-                        nextExpandedIndex = i;
-                        break;
-                    }
-                }
-                const prevHandlePosition = index === 0 ? 0 : this.layout.handles[index - 1].offsetTop - this.layout.handles[index - 1].offsetHeight;
-                const position = prevHandlePosition + (nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT;
+                const nextExpandedIndex = nextExpanded(index);
+                const position = prevHandlePos(index) + ((nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT);
                 this.layout.moveHandle(nextExpandedIndex - 1, position);
             }
 
