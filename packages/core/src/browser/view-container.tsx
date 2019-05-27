@@ -28,8 +28,8 @@ import { TheiaSplitLayout } from './shell/theia-split-layout';
 
 export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
-    readonly panel: SplitPanel;
-    readonly partHeight = new Map<ViewContainerPart, number>();
+    protected readonly panel: SplitPanel;
+    protected readonly partHeight = new Map<ViewContainerPart, number>();
 
     constructor(protected readonly services: ViewContainer.Services, ...inputs: { widget: Widget, options?: ViewContainer.Factory.WidgetOptions }[]) {
         super();
@@ -116,7 +116,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         return this.parts;
     }
 
-    public get layout(): TheiaSplitLayout {
+    get layout(): TheiaSplitLayout {
         return this.panel.layout as TheiaSplitLayout;
     }
 
@@ -173,48 +173,31 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
             // Store the height before we collapse it.
             this.partHeight.set(part, part.node.clientHeight);
 
-            let beforeOpenIndex = -1;
+            let prevExpandedIndex = -1;
             for (let i = index - 1; i >= 0; i--) {
                 if (!this.parts[i].collapsed) {
-                    beforeOpenIndex = i;
+                    prevExpandedIndex = i;
                     break;
                 }
             }
 
-            // If there is a preceding open handler we stretch that one.
-            if (beforeOpenIndex !== -1) {
+            if (prevExpandedIndex !== -1) {
                 const handlePosition = index === this.parts.length - 1 ? this.panel.node.offsetHeight : this.layout.handles[index].offsetTop;
                 const position = handlePosition - this.layout.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
-                this.layout.moveHandle(beforeOpenIndex, position);
+                this.layout.moveHandle(prevExpandedIndex, position);
             } else {
-                // Otherwise, we push the current one down.
-                const position = index === 0 ? ViewContainerPart.HEADER_HEIGHT : this.layout.handles[index - 1].offsetHeight + ViewContainerPart.HEADER_HEIGHT;
-                this.layout.moveHandle(index, position);
-            }
-
-            const openedParts = this.parts.filter(p => !p.collapsed);
-            if (openedParts.length === 0) {
-                // Collapse all and move all handlers up to the top.
-                for (let i = 0; i < this.parts.length; i++) {
-                    const position = ViewContainerPart.HEADER_HEIGHT + this.panel.handles[i].offsetHeight;
-                    this.layout.moveHandle(i, position);
-                }
-            } else if (openedParts.length === 1) {
-                // Collapse all and the stretch the space for the single open part.
-                const toStretchIndex = this.parts.indexOf(openedParts[0]);
-                if (toStretchIndex !== -1) {
-                    if (toStretchIndex === 0) {
-                        const position = this.panel.node.offsetHeight - ((this.parts.length - 1) * ViewContainerPart.HEADER_HEIGHT);
-                        this.layout.moveHandle(toStretchIndex, position);
-                    } else if (toStretchIndex === this.parts.length - 1) {
-                        const position = (this.parts.length - 1) * ViewContainerPart.HEADER_HEIGHT;
-                        this.layout.moveHandle(toStretchIndex - 1, position);
-                    } else {
-                        const position = toStretchIndex * ViewContainerPart.HEADER_HEIGHT;
-                        this.layout.moveHandle(toStretchIndex - 1, position);
+                let nextExpandedIndex = this.parts.length - 1;
+                for (let i = index; i < this.parts.length; i++) {
+                    if (!this.parts[i].collapsed) {
+                        nextExpandedIndex = i;
+                        break;
                     }
                 }
+                const prevHandlePosition = index === 0 ? 0 : this.layout.handles[index - 1].offsetTop - this.layout.handles[index - 1].offsetHeight;
+                const position = prevHandlePosition + (nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT;
+                this.layout.moveHandle(nextExpandedIndex - 1, position);
             }
+
         } else {
             let height = this.partHeight.get(part);
             this.partHeight.delete(part);
