@@ -24,7 +24,7 @@ import { CommandRegistry } from '../common/command';
 import { MenuModelRegistry, MenuPath } from '../common/menu';
 import { ContextMenuRenderer, Anchor } from './context-menu-renderer';
 import { ApplicationShell } from './shell/application-shell';
-import { TheiaSplitLayout } from './shell/theia-split-layout';
+import { ViewContainerLayout } from './view-container-layout';
 
 export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
@@ -35,7 +35,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         super();
         this.id = `view-container-widget-${v4()}`;
         this.addClass('theia-view-container');
-        const layout = new TheiaSplitLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: this.orientation });
+        const layout = new ViewContainerLayout({ renderer: SplitPanel.defaultRenderer, spacing: 2, orientation: this.orientation });
         this.panel = new SplitPanel({ layout });
         this.panel.addClass('split-panel');
         for (const { widget, options } of inputs) {
@@ -116,8 +116,8 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         return this.parts;
     }
 
-    get layout(): TheiaSplitLayout {
-        return this.panel.layout as TheiaSplitLayout;
+    get layout(): ViewContainerLayout {
+        return this.panel.layout as ViewContainerLayout;
     }
 
     protected registerPart(toRegister: ViewContainerPart): void {
@@ -158,84 +158,16 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected toggleCollapsed(part: ViewContainerPart): void {
-        // Cannot collapse with horizontal orientation.
-        if (this.orientation === 'horizontal') {
-            return;
-        }
 
         const index = this.parts.indexOf(part);
         if (index === -1) {
             return;
         }
 
-        const prevHandlePos = (i: number) => i === 0 ? 0 : this.layout.handles[i - 1].offsetTop;
-        const handlePos = (i: number) => i === this.parts.length - 1 ? this.panel.node.offsetHeight : this.layout.handles[i].offsetTop;
-        const prevExpanded = (from: number) => {
-            for (let i = from - 1; i >= 0; i--) {
-                if (!this.parts[i].collapsed) {
-                    return i;
-                }
-            }
-            return -1;
-        };
-        const nextExpanded = (from: number) => {
-            const result = this.parts.findIndex((p, i) => i > from && !p.collapsed);
-            return result === -1 ? this.parts.length - 1 : result;
-        };
-
-        const animate = (handleIndex: number, targetPosition: number) => {
-            // tslint:disable-next-line:no-any
-            if ((window as any).foo_bar === true) {
-                this.layout.moveHandle(handleIndex, targetPosition);
-            } else {
-                const start = handlePos(handleIndex);
-                const end = targetPosition;
-                const done = (f: number, t: number) => start < end ? f >= t : t >= f;
-                const step = () => start < end ? 40 : -40;
-                const moveHandle = (p: number) => new Promise<void>(resolve => {
-                    if (start < end) {
-                        if (p > end) {
-                            this.layout.moveHandle(handleIndex, end);
-                        } else {
-                            this.layout.moveHandle(handleIndex, p);
-                        }
-                    } else {
-                        if (p < end) {
-                            this.layout.moveHandle(handleIndex, end);
-                        } else {
-                            this.layout.moveHandle(handleIndex, p);
-                        }
-                    }
-                    resolve();
-                });
-                let currentPosition = start;
-                const next = () => {
-                    if (!done(currentPosition, end)) {
-                        moveHandle(currentPosition += step()).then(() => {
-                            window.requestAnimationFrame(next);
-                        });
-                    }
-                };
-                next();
-            }
-        };
-
         if (part.collapsed) {
-
             // Store the height before we collapse it.
             this.partHeight.set(part, part.node.clientHeight);
-
-            const prevExpandedIndex = prevExpanded(index);
-            if (prevExpandedIndex !== -1) {
-                const handlePosition = handlePos(index);
-                const position = handlePosition - this.layout.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
-                animate(prevExpandedIndex, position);
-            } else {
-                const nextExpandedIndex = nextExpanded(index);
-                const position = prevHandlePos(index) + ((nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT);
-                animate(nextExpandedIndex - 1, position);
-            }
-
+            this.layout.toggleCollapsed(index);
         } else {
             let height = this.partHeight.get(part);
             this.partHeight.delete(part);
