@@ -18,14 +18,15 @@ import { IIterator, iter, toArray } from '@phosphor/algorithm';
 import { Message } from '@phosphor/messaging';
 import { SplitLayout, Widget, LayoutItem } from './widgets';
 import { ViewContainerPart } from './view-container';
-import { preventNavigation } from './browser';
+import * as PQueue from 'p-queue';
 
 export class ViewContainerLayout extends SplitLayout {
 
-    protected readonly itemHeights = new Map<Widget, number>();
+    protected readonly defaultSizes = new Map<Widget, number>();
+    protected readonly animationQueue = new PQueue({ autoStart: true, concurrency: 1 });
 
     constructor(protected options: ViewContainerLayout.Options) {
-        super(options);
+        super(Object.assign(options, { fitPolicy: 'set-no-constraint' }));
     }
 
     iter(): IIterator<Widget> {
@@ -84,16 +85,19 @@ export class ViewContainerLayout extends SplitLayout {
 
     protected onFitRequest(msg: Message): void {
         super.onFitRequest(msg);
-        for (const { widget } of this.items) {
-            const { offsetHeight } = widget.node;
-            if (offsetHeight > 0 && !this.itemHeights.get(widget)) {
-                this.itemHeights.set(widget, offsetHeight);
+        requestAnimationFrame(() => {
+            const relativeSizes = this.relativeSizes();
+            for (let i = 0; i < this.items.length; i++) {
+                const { widget } = this.items[i];
+                if (!this.defaultSizes.has(widget)) {
+                    this.defaultSizes.set(widget, relativeSizes[i]);
+                }
             }
-        }
+        });
     }
 
     removeWidget(widget: Widget): void {
-        this.itemHeights.delete(widget);
+        this.defaultSizes.delete(widget);
         super.removeWidget(widget);
     }
 
@@ -101,46 +105,63 @@ export class ViewContainerLayout extends SplitLayout {
         // tslint:disable-next-line:no-any
         const widget = (this as any)._widgets[index];
         if (widget) {
-            this.itemHeights.delete(widget);
+            this.defaultSizes.delete(widget);
         }
         super.removeWidgetAt(index);
     }
 
-    animateHandle(index: number, position: number): void {
-        const start = this.handlePosition(index);
-        const end = position;
-        const done = (f: number, t: number) => start < end ? f >= t : t >= f;
-        const step = () => start < end ? 40 : -40;
-        const moveHandle = (p: number) => new Promise<void>(resolve => {
-            if (start < end) {
-                if (p > end) {
-                    this.moveHandle(index, end);
+    async animateHandle(index: number, position: number): Promise<void> {
+        this.animationQueue.add(() => new Promise<void>(animationResolve => {
+            const start = this.handlePosition(index);
+            const end = position;
+            const done = (f: number, t: number) => start < end ? f >= t : t >= f;
+            const step = () => start < end ? 40 : -40;
+            const moveHandle = (p: number) => new Promise<void>(resolve => {
+                if (start < end) {
+                    if (p > end) {
+                        this.moveHandle(index, end);
+                    } else {
+                        this.moveHandle(index, p);
+                    }
                 } else {
-                    this.moveHandle(index, p);
+                    if (p < end) {
+                        this.moveHandle(index, end);
+                    } else {
+                        this.moveHandle(index, p);
+                    }
                 }
-            } else {
-                if (p < end) {
-                    this.moveHandle(index, end);
+                resolve();
+            });
+            let currentPosition = start;
+            const next = () => {
+                if (!done(currentPosition, end)) {
+                    moveHandle(currentPosition += step()).then(() => {
+                        window.requestAnimationFrame(next);
+                    });
                 } else {
-                    this.moveHandle(index, p);
+                    if (start < end) {
+                        if (currentPosition < end) {
+                            throw new Error(`currentPosition < end; currentPosition: ${currentPosition}, end: ${end} start: ${start}.`);
+                        }
+                    } else {
+                        if (currentPosition > end) {
+                            throw new Error(`currentPosition > end; currentPosition: ${currentPosition}, end: ${end} start: ${start}.`);
+                        }
+                    }
+                    animationResolve();
                 }
-            }
-            resolve();
-        });
-        let currentPosition = start;
-        const next = () => {
-            if (!done(currentPosition, end)) {
-                moveHandle(currentPosition += step()).then(() => {
-                    window.requestAnimationFrame(next);
-                });
-            }
-        };
-        next();
+            };
+            next();
+        }));
     }
 
     toggleCollapsed(index: number): void {
         // Cannot collapse with horizontal orientation.
         if (this.orientation === 'horizontal') {
+            return;
+        }
+
+        if (!this.parent) {
             return;
         }
 
@@ -159,14 +180,51 @@ export class ViewContainerLayout extends SplitLayout {
                 this.animateHandle(nextExpandedIndex - 1, position);
             }
         } else {
-            const height = this.itemHeights.get(widget) || 100;
-            const prevExpandedIndex = this.prevExpandedIndex(index);
-            if (prevExpandedIndex !== -1) {
-                const position = this.handlePosition(prevExpandedIndex) - (height - ViewContainerPart.HEADER_HEIGHT);
-                this.moveHandle(prevExpandedIndex, position);
+            const expandedItems = this.items.filter(item => !this.isCollapsed(item.widget));
+            // Expanding one item is special, as it has to stretch the entire available space.
+            // In this case we do not reuse any previously stored heights.
+            if (expandedItems.length === 1) {
+                const position = this.parent.node.clientHeight - ((this.items.length - 1 - index) * ViewContainerPart.HEADER_HEIGHT);
+                this.animateHandle(index, position);
             } else {
-                const position = this.handlePosition(index) + (height - ViewContainerPart.HEADER_HEIGHT);
-                this.moveHandle(index, position);
+                // Poor man's solution if nothing else works.
+                // const relativeSizes = this.relativeSizes();
+                // let toNormalize = 1;
+                // for (let i = 0; i < this.items.length; i++) {
+                //     if (this.isCollapsed(this.items[i].widget)) {
+                //         toNormalize -= relativeSizes[i];
+                //     }
+                // }
+                // const ratio = toNormalize / expandedItems.length;
+                // const updatedRelativeSizes = relativeSizes.slice();
+                // for (let i = 0; i < this.items.length; i++) {
+                //     if (!this.isCollapsed(this.items[i].widget)) {
+                //         updatedRelativeSizes[i] = ratio;
+                //     }
+                // }
+                // this.setRelativeSizes(updatedRelativeSizes);
+
+                // This is another alternative. Same as above, but animates the handle moves after normalizing the item sizes.
+                const { items } = this;
+                const itemCount = items.length;
+                const { offsetHeight } = this.parent.node;
+                // The hint is without the header height.
+                const heightHint = (offsetHeight - (itemCount * ViewContainerPart.HEADER_HEIGHT)) / expandedItems.length;
+                // TODO: Here we should consider weights.
+                let prevHandlePosition = 0;
+                const animations: [number, number][] = [];
+                for (let i = 0; i < itemCount; i++) {
+                    if (this.isCollapsed(items[i].widget)) {
+                        prevHandlePosition += ViewContainerPart.HEADER_HEIGHT;
+                    } else {
+                        prevHandlePosition += (heightHint + ViewContainerPart.HEADER_HEIGHT);
+                    }
+                    animations.push([i, prevHandlePosition]);
+                }
+                for (const [handleIndex, position] of animations) {
+                    this.animateHandle(handleIndex, position);
+                }
+
             }
         }
 
