@@ -177,7 +177,7 @@ export class ViewContainerLayout extends SplitLayout {
                 // Collapse the 1. index.
                 const nextExpandedIndex = this.nextExpandedIndex(index);
                 const position = this.prevHandlePosition(index) + ((nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT);
-                this.animateHandle(nextExpandedIndex - 1, position);
+                this.animateHandle(Math.max(nextExpandedIndex - 1, 0), position);
             }
         } else {
             const expandedItems = this.items.filter(item => !this.isCollapsed(item.widget));
