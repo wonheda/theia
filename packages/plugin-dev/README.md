@@ -1,4 +1,4 @@
-# Theia - Theia - Plugin Development
+# Theia - Plugin Development
 
 See [here](https://www.theia-ide.org/doc/index.html) for a detailed documentation.
 

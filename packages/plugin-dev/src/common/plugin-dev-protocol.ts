@@ -35,7 +35,6 @@ export interface HostedPluginServer extends JsonRpcServer<HostedPluginClient> {
     isPluginValid(uri: string): Promise<boolean>;
 }
 
-export const HostedPluginClient = Symbol('HostedPluginClient');
 export interface HostedPluginClient {
 }
 
