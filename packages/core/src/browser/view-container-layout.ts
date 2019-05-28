@@ -15,10 +15,14 @@
  ********************************************************************************/
 
 import { IIterator, iter, toArray } from '@phosphor/algorithm';
+import { Message } from '@phosphor/messaging';
 import { SplitLayout, Widget, LayoutItem } from './widgets';
 import { ViewContainerPart } from './view-container';
+import { preventNavigation } from './browser';
 
 export class ViewContainerLayout extends SplitLayout {
+
+    protected readonly itemHeights = new Map<Widget, number>();
 
     constructor(protected options: ViewContainerLayout.Options) {
         super(options);
@@ -78,6 +82,30 @@ export class ViewContainerLayout extends SplitLayout {
         return result === -1 ? this.items.length - 1 : result;
     }
 
+    protected onFitRequest(msg: Message): void {
+        super.onFitRequest(msg);
+        for (const { widget } of this.items) {
+            const { offsetHeight } = widget.node;
+            if (offsetHeight > 0 && !this.itemHeights.get(widget)) {
+                this.itemHeights.set(widget, offsetHeight);
+            }
+        }
+    }
+
+    removeWidget(widget: Widget): void {
+        this.itemHeights.delete(widget);
+        super.removeWidget(widget);
+    }
+
+    removeWidgetAt(index: number): void {
+        // tslint:disable-next-line:no-any
+        const widget = (this as any)._widgets[index];
+        if (widget) {
+            this.itemHeights.delete(widget);
+        }
+        super.removeWidgetAt(index);
+    }
+
     animateHandle(index: number, position: number): void {
         const start = this.handlePosition(index);
         const end = position;
@@ -116,17 +144,29 @@ export class ViewContainerLayout extends SplitLayout {
             return;
         }
 
+        // TODO: `ViewContainerPart.HEADER_HEIGHT` should not be here.
         const { widget } = this.items[index];
         if (this.isCollapsed(widget)) {
             const prevExpandedIndex = this.prevExpandedIndex(index);
             if (prevExpandedIndex !== -1) {
-                const handlePosition = this.handlePosition(index);
-                const position = handlePosition - this.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
+                const position = this.handlePosition(index) - this.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
                 this.animateHandle(prevExpandedIndex, position);
             } else {
+                // TODO: check if `offsetHeight` is needed here or not.
+                // Collapse the 1. index.
                 const nextExpandedIndex = this.nextExpandedIndex(index);
                 const position = this.prevHandlePosition(index) + ((nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT);
                 this.animateHandle(nextExpandedIndex - 1, position);
+            }
+        } else {
+            const height = this.itemHeights.get(widget) || 100;
+            const prevExpandedIndex = this.prevExpandedIndex(index);
+            if (prevExpandedIndex !== -1) {
+                const position = this.handlePosition(prevExpandedIndex) - (height - ViewContainerPart.HEADER_HEIGHT);
+                this.moveHandle(prevExpandedIndex, position);
+            } else {
+                const position = this.handlePosition(index) + (height - ViewContainerPart.HEADER_HEIGHT);
+                this.moveHandle(index, position);
             }
         }
 

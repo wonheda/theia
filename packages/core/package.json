@@ -19,7 +19,6 @@
     "@types/ws": "^5.1.2",
     "@types/yargs": "^11.1.0",
     "ajv": "^6.5.3",
-    "array-move": "^2.1.0",
     "body-parser": "^1.17.2",
     "es6-promise": "^4.2.4",
     "express": "^4.16.3",

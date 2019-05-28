@@ -29,7 +29,6 @@ import { ViewContainerLayout } from './view-container-layout';
 export class ViewContainer extends BaseWidget implements ApplicationShell.TrackableWidgetProvider {
 
     protected readonly panel: SplitPanel;
-    protected readonly partHeight = new Map<ViewContainerPart, number>();
 
     constructor(protected readonly services: ViewContainer.Services, ...inputs: { widget: Widget, options?: ViewContainer.Factory.WidgetOptions }[]) {
         super();
@@ -72,8 +71,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
                 }
             }),
             Disposable.create(() => commandRegistry.unregisterCommand(this.globalHideCommandId)),
-            Disposable.create(() => menuRegistry.unregisterMenuAction(this.globalHideCommandId)),
-            Disposable.create(() => this.partHeight.clear())
+            Disposable.create(() => menuRegistry.unregisterMenuAction(this.globalHideCommandId))
         ]);
     }
 
@@ -150,7 +148,6 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         const commandId = this.toggleVisibilityCommandId(part);
         commandRegistry.unregisterCommand(commandId);
         menuRegistry.unregisterMenuAction(commandId);
-        this.partHeight.delete(part);
     }
 
     protected toggleVisibility(part: ViewContainerPart): void {
@@ -158,37 +155,11 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
     }
 
     protected toggleCollapsed(part: ViewContainerPart): void {
-
         const index = this.parts.indexOf(part);
         if (index === -1) {
             return;
         }
-
-        if (part.collapsed) {
-            // Store the height before we collapse it.
-            this.partHeight.set(part, part.node.clientHeight);
-            this.layout.toggleCollapsed(index);
-        } else {
-            let height = this.partHeight.get(part);
-            this.partHeight.delete(part);
-            if (height === undefined) {
-                height = 100;
-                console.log(`${part.id} does not have a previous height.`);
-            } else {
-                if (index === 0) {
-                    this.layout.moveHandle(index, height);
-                } else if (index === this.parts.length - 1) {
-                    this.layout.moveHandle(index - 1, this.panel.node.offsetHeight - this.layout.handles[index - 1].clientHeight - height);
-                } else {
-                    // TODO: !!!
-                    if (this.parts[index - 1].collapsed) {
-                        this.layout.moveHandle(index, this.layout.handles[index].offsetTop + height);
-                    } else {
-                        this.layout.moveHandle(index - 1, this.layout.handles[index - 1].offsetTop - height);
-                    }
-                }
-            }
-        }
+        this.layout.toggleCollapsed(index);
     }
 
     protected moveBefore(toMovedId: string, moveBeforeThisId: string): void {
