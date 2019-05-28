@@ -193,7 +193,19 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
                 const done = (f: number, t: number) => start < end ? f >= t : t >= f;
                 const step = () => start < end ? 40 : -40;
                 const moveHandle = (p: number) => new Promise<void>(resolve => {
-                    this.layout.moveHandle(handleIndex, p);
+                    if (start < end) {
+                        if (p > end) {
+                            this.layout.moveHandle(handleIndex, end);
+                        } else {
+                            this.layout.moveHandle(handleIndex, p);
+                        }
+                    } else {
+                        if (p < end) {
+                            this.layout.moveHandle(handleIndex, end);
+                        } else {
+                            this.layout.moveHandle(handleIndex, p);
+                        }
+                    }
                     resolve();
                 });
                 let currentPosition = start;
