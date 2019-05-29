@@ -25,6 +25,13 @@ import { FrontendApplicationStateService } from './frontend-application-state';
 import { preventNavigation, parseCssTime } from './browser';
 import { CorePreferences } from './core-preferences';
 
+async function trace<T>(p: MaybePromise<T>, label?: string): Promise<T> {
+    const start = Date.now();
+    const result = await p;
+    console.log(`Trace: { duration: ${(Date.now() - start).toFixed(2)} ms, label: ${label} }`);
+    return result;
+}
+
 /**
  * Clients can implement to get a callback for contributing widgets to a shell on start.
  */
@@ -115,7 +122,8 @@ export class FrontendApplication {
      * - reveal the application shell if it was hidden by a startup indicator
      */
     async start(): Promise<void> {
-        await this.startContributions();
+
+        await trace(this.startContributions(), 'startContributions');
         this.stateService.state = 'started_contributions';
 
         const host = await this.getHost();
@@ -123,10 +131,10 @@ export class FrontendApplication {
         await new Promise(resolve => requestAnimationFrame(() => resolve()));
         this.stateService.state = 'attached_shell';
 
-        await this.initializeLayout();
+        await trace(this.initializeLayout(), 'initializeLayout');
         this.stateService.state = 'initialized_layout';
 
-        await this.revealShell(host);
+        await trace(this.revealShell(host), 'revealShell');
         this.registerEventListeners();
         this.stateService.state = 'ready';
     }
@@ -273,7 +281,7 @@ export class FrontendApplication {
         for (const contribution of this.contributions.getContributions()) {
             if (contribution.initialize) {
                 try {
-                    contribution.initialize();
+                    this.measure(contribution.constructor.name + '.init', () => contribution.initialize!());
                 } catch (error) {
                     this.logger.error('Could not initialize contribution', error);
                 }
@@ -283,7 +291,7 @@ export class FrontendApplication {
         for (const contribution of this.contributions.getContributions()) {
             if (contribution.configure) {
                 try {
-                    await contribution.configure(this);
+                    await this.measure(contribution.constructor.name + '.config', () => contribution.configure!(this));
                 } catch (error) {
                     this.logger.error('Could not configure contribution', error);
                 }
@@ -334,11 +342,7 @@ export class FrontendApplication {
         performance.mark(endMark);
         performance.measure(name, startMark, endMark);
         for (const item of performance.getEntriesByName(name)) {
-            if (item.duration > 100) {
-                console.warn(item.name + ' is slow, took: ' + item.duration + ' ms');
-            } else {
-                console.debug(item.name + ' took ' + item.duration + ' ms');
-            }
+            console.log(`Measure: { dur: ${(item.duration).toFixed(2)} ms, name: ${item.name} }`);
         }
         performance.clearMeasures(name);
         return result;

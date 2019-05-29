@@ -76,7 +76,7 @@ export class EditorNavigationContribution implements Disposable, FrontendApplica
     }
 
     async onStart(): Promise<void> {
-        await this.restoreState();
+        this.restoreState();
     }
 
     onStop(): void {
