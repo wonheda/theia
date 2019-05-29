@@ -83,6 +83,10 @@
     display: block;
 }
 
+.theia-view-container .body {
+    height: 100%;
+}
+
 .theia-view-container .body .theia-tree-source-node-placeholder {
     padding-top: 4px;
     height: 100%;
