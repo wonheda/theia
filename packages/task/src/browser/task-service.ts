@@ -111,7 +111,7 @@ export class TaskService implements TaskConfigurationClient {
         // notify user that task has started
         this.taskWatcher.onTaskCreated((event: TaskInfo) => {
             if (this.isEventForThisClient(event.ctx)) {
-                this.messageService.info(`Task #${event.taskId} created - ${event.config.label}`);
+                this.messageService.info(`Task ${event.config.type}: ${event.config.label} has been started`);
             }
         });
 
@@ -122,14 +122,14 @@ export class TaskService implements TaskConfigurationClient {
             }
 
             if (event.code !== undefined) {
-                const message = `Task ${event.taskId} has exited with code ${event.code}.`;
+                const message = `Task ${event.processType}: ${event.label} has exited with code ${event.code}.`;
                 if (event.code === 0) {
                     this.messageService.info(message);
                 } else {
                     this.messageService.error(message);
                 }
             } else if (event.signal !== undefined) {
-                this.messageService.info(`Task ${event.taskId} was terminated by signal ${event.signal}.`);
+                this.messageService.info(`Task ${event.processType}: ${event.label} was terminated by signal ${event.signal}.`);
             } else {
                 console.error('Invalid TaskExitedEvent received, neither code nor signal is set.');
             }
