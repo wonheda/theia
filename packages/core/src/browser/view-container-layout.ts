@@ -223,11 +223,9 @@ export namespace ViewContainerLayout {
             if (this.items[index].collapsed) {
                 const prevExpandedIndex = this.prevExpanded(index);
                 if (prevExpandedIndex !== -1) {
-                    const position = this.items[index].position - this.headerHeight + this.handleHeight;
+                    const position = this.items[index].position - (((index - prevExpandedIndex) * (this.headerHeight + this.handleHeight)));
                     return [{ handleIndex: prevExpandedIndex, position }];
                 } else {
-                    // TODO: check if `offsetHeight` is needed here or not.
-                    // Collapse the 1. index.
                     const nextExpandedIndex = this.nextExpanded(index);
                     const position = (index === 0 ? 0 : this.items[index - 1].position) + ((nextExpandedIndex - index) * this.headerHeight);
                     return [{ handleIndex: Math.max(nextExpandedIndex - 1, 0), position }];
@@ -246,9 +244,8 @@ export namespace ViewContainerLayout {
                     if (heightHint < this.items[index].minHeight) {
                         heightHint = this.items[index].minHeight;
                     }
-                    // Can we use the space above?
                     // We can if there is a previous open part which can shrink.
-                    // TODO: check previous' current and minSize too.
+                    // TODO: check previous' current and minSize too. Use-case?
                     const prevExpandedIndex = this.prevExpanded(index);
                     if (prevExpandedIndex !== -1) {
                         animations.push({
