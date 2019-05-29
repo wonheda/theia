@@ -103,8 +103,17 @@ export class ViewContainerLayout extends SplitLayout {
         const widget = (this as any)._widgets[index];
         if (widget) {
             this.defaultHeights.delete(widget);
+            this.beforeCollapseHeights.delete(widget);
         }
         super.removeWidgetAt(index);
+    }
+
+    dispose(): void {
+        if (!this.animationQueue.isPaused) {
+            this.animationQueue.pause();
+        }
+        this.animationQueue.clear();
+        super.dispose();
     }
 
     async animateHandle(index: number, position: number): Promise<void> {
@@ -164,7 +173,6 @@ export class ViewContainerLayout extends SplitLayout {
         }
 
         const adjuster = this.createAdjuster();
-        console.log('ADJUSTER', JSON.stringify(adjuster));
         const animations = adjuster.adjustHandlers(index);
         for (const { handleIndex, position } of animations) {
             this.animateHandle(handleIndex, position);
@@ -254,17 +262,13 @@ export namespace ViewContainerLayout {
                         });
                     }
 
-                    const prevHandlePos = (i: number) => i === 0 ? -1 : this.items[i - 1].position;
-
-                    // Check whether the required adjustment interferes with the desired heights of any other parts.
                     const { handleIndex } = animations[0];
                     if (prevExpandedIndex !== -1) {
-                        // Check above.
                         for (let i = handleIndex; i >= 0; i--) {
                             if (!this.items[i].collapsed) {
-                                const prevHandlePosition = prevHandlePos(i);
+                                const prevHandlePosition = i === 0 ? -1 : this.items[i].position;
                                 if (prevHandlePosition === -1) {
-                                    break; // Cannot adjust hight above;
+                                    break; // No more place above.
                                 }
                                 const newHeight = animations[animations.length - 1].position - prevHandlePosition;
                                 if (newHeight < this.items[i].minHeight) {
@@ -273,12 +277,11 @@ export namespace ViewContainerLayout {
                                         position: animations[animations.length - 1].position - (this.items[i].minHeight + this.headerHeight)
                                     });
                                 } else {
+                                    // If the previous was OK, we no need to adjust above.
                                     break;
                                 }
                             }
                         }
-                    } else {
-                        // Check below.
                     }
                 }
                 return animations;
