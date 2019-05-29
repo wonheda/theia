@@ -88,6 +88,8 @@ export class ViewContainerLayout extends SplitLayout {
                 const { offsetHeight } = widget.node;
                 if (!this.defaultHeights.has(widget)) {
                     this.defaultHeights.set(widget, offsetHeight);
+                    // TODO: Adjust when container is resized!
+                    // offsetHeight * (oldSize / newSize)
                 }
             }
         });
@@ -121,7 +123,7 @@ export class ViewContainerLayout extends SplitLayout {
             const start = this.handlePosition(index);
             const end = position;
             const done = (f: number, t: number) => start < end ? f >= t : t >= f;
-            const step = () => start < end ? 40 : -40;
+            const step = () => start < end ? 40 : -40; // TODO: `Math.sign`
             const moveHandle = (p: number) => new Promise<void>(resolve => {
                 if (start < end) {
                     if (p > end) {
@@ -145,6 +147,7 @@ export class ViewContainerLayout extends SplitLayout {
                         window.requestAnimationFrame(next);
                     });
                 } else {
+                    // TODO: Get rid of this "logging".
                     if (start < end) {
                         if (currentPosition < end) {
                             throw new Error(`currentPosition < end; currentPosition: ${currentPosition}, end: ${end} start: ${start}.`);
@@ -168,7 +171,9 @@ export class ViewContainerLayout extends SplitLayout {
         }
 
         const { widget } = this.items[index];
-        if (this.isCollapsed(widget)) {
+        // Do not store the height of the "stretched item". Otherwise, we mess up the "hint height".
+        // Store the height only if there are other expanded items.
+        if (this.isCollapsed(widget) /*&& this.items.some(item => !this.isCollapsed(item.widget))*/) {
             this.beforeCollapseHeights.set(widget, widget.node.offsetHeight);
         }
 
@@ -223,7 +228,7 @@ export namespace ViewContainerLayout {
             if (this.items[index].collapsed) {
                 const prevExpandedIndex = this.prevExpanded(index);
                 if (prevExpandedIndex !== -1) {
-                    const position = this.items[index].position - (((index - prevExpandedIndex) * (this.headerHeight + this.handleHeight)));
+                    const position = this.items[index].position - ((index - prevExpandedIndex) * (this.headerHeight + this.handleHeight));
                     return [{ handleIndex: prevExpandedIndex, position }];
                 } else {
                     const nextExpandedIndex = this.nextExpanded(index);
@@ -235,7 +240,7 @@ export namespace ViewContainerLayout {
                 const expandedItems = this.items.filter(item => !item.collapsed);
                 if (expandedItems.length === 1) {
                     const position = this.fullHeight - ((this.items.length - 1 - index) * this.headerHeight);
-                    animations.push({ handleIndex: index, position });
+                    return [{ handleIndex: index, position }];
                 } else {
                     let heightHint = this.items[index].beforeCollapseHeight;
                     if (heightHint === undefined || heightHint <= this.headerHeight) {
@@ -244,44 +249,83 @@ export namespace ViewContainerLayout {
                     if (heightHint < this.items[index].minHeight) {
                         heightHint = this.items[index].minHeight;
                     }
-                    // We can if there is a previous open part which can shrink.
-                    // TODO: check previous' current and minSize too. Use-case?
+
+                    // Can open upwards?
+                    // This is net widget height without headers, handlers and the entire layout thingies.
+                    const availableAboveHeight = this.items[index].position
+                        - ((index + 1) * this.headerHeight) // Headers.
+                        - (index * this.handleHeight) // Heights. One less than the headers, the last handler is `display: none`.
+                        - this.items
+                            .filter((_, i) => i <= index)
+                            .filter(item => !item.collapsed)
+                            .map(({ minHeight }) => minHeight)
+                            .reduce((sum, curr) => sum + curr, 0); // Minimum required heights for the opened parts.
+
+                    const availableBelowHeight = this.fullHeight
+                        - this.items[index].position
+                        - ((this.items.length - index) * (this.headerHeight + this.handleHeight))
+                        - this.items
+                            .filter((_, i) => i > index)
+                            .filter(item => !item.collapsed)
+                            .map(({ minHeight }) => minHeight)
+                            .reduce((sum, curr) => sum + curr, 0); // Minimum required heights for the opened parts.
                     const prevExpandedIndex = this.prevExpanded(index);
-                    if (prevExpandedIndex !== -1) {
+                    // XXX: Should we check the available space below and compare the heights instead? Bigger space would win.
+                    // Currently, we just try to use the space above and fall back to down if upwards is not feasible.
+                    const canUseAboveHeight = prevExpandedIndex !== -1 && availableAboveHeight > 0;
+
+                    if (canUseAboveHeight) {
                         animations.push({
                             handleIndex: index - 1,
-                            position: this.items[index].position - heightHint
+                            position: this.items[index].position - Math.min(heightHint, availableAboveHeight)
                         });
                     } else {
                         animations.push({
                             handleIndex: index,
-                            position: this.items[index].position + heightHint - this.headerHeight
+                            position: this.items[index].position + Math.min(heightHint, availableBelowHeight) - this.headerHeight
                         });
                     }
 
                     const { handleIndex } = animations[0];
-                    if (prevExpandedIndex !== -1) {
+                    if (canUseAboveHeight) {
                         for (let i = handleIndex; i >= 0; i--) {
                             if (!this.items[i].collapsed) {
-                                const prevHandlePosition = i === 0 ? -1 : this.items[i - 1].position;
-                                if (prevHandlePosition === -1) {
+                                const handleToAdjustIndex = this.prevExpanded(i);
+                                if (handleToAdjustIndex === -1) {
                                     break; // No more place above.
                                 }
-                                const newHeight = animations[animations.length - 1].position - prevHandlePosition;
-                                if (newHeight < this.items[i].minHeight) {
+                                const handleToAdjustPosition = this.items[handleToAdjustIndex].position;
+                                const adjustedHandlerPosition = animations[animations.length - 1].position;
+                                if (adjustedHandlerPosition - handleToAdjustPosition < this.items[handleToAdjustIndex].minHeight) {
                                     animations.push({
-                                        handleIndex: i - 1,
-                                        position: animations[animations.length - 1].position - (this.items[i].minHeight + this.headerHeight)
+                                        handleIndex: handleToAdjustIndex,
+                                        position: adjustedHandlerPosition - this.items[handleToAdjustIndex].minHeight
                                     });
                                 } else {
                                     // If the previous was OK, we no need to adjust above.
+                                    // TODO: balance items. Right now we just push up the handles just to fit into the `minHeight`.
                                     break;
                                 }
                             }
                         }
+                    } else {
+                        for (let i = index + 1; i < this.items.length - 1; i++) {
+                            if (!this.items[i].collapsed) {
+                                const { position } = this.items[i];
+                                const adjustedHandlerPosition = animations[animations.length - 1].position;
+                                if (position - adjustedHandlerPosition < this.items[i].minHeight) {
+                                    animations.push({
+                                        handleIndex: i,
+                                        position: adjustedHandlerPosition + this.items[i].minHeight
+                                    });
+                                }
+                            } else {
+                                break;
+                            }
+                        }
                     }
+                    return canUseAboveHeight ? animations.reverse() : animations;
                 }
-                return animations;
             }
         }
 
@@ -308,7 +352,7 @@ export namespace ViewContainerLayout {
                     return i;
                 }
             }
-            return this.items.length - 1; // TODO: for consistency, -1 would be better.
+            return this.items.length - 1; // TODO: Perhaps for consistency, -1 would be better.
         }
 
     }
