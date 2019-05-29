@@ -121,15 +121,18 @@ export class TaskService implements TaskConfigurationClient {
                 return;
             }
 
+            const taskConfiguration = event.config;
+            const taskIdentifier = taskConfiguration ? `${taskConfiguration.type}: ${taskConfiguration.label}` : `${event.taskId}`;
+
             if (event.code !== undefined) {
-                const message = `Task ${event.processType}: ${event.label} has exited with code ${event.code}.`;
+                const message = `Task ${taskIdentifier} has exited with code ${event.code}.`;
                 if (event.code === 0) {
                     this.messageService.info(message);
                 } else {
                     this.messageService.error(message);
                 }
             } else if (event.signal !== undefined) {
-                this.messageService.info(`Task ${event.processType}: ${event.label} was terminated by signal ${event.signal}.`);
+                this.messageService.info(`Task ${taskIdentifier} was terminated by signal ${event.signal}.`);
             } else {
                 console.error('Invalid TaskExitedEvent received, neither code nor signal is set.');
             }

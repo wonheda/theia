@@ -98,8 +98,7 @@ export interface TaskExitedEvent {
     readonly code?: number;
     readonly signal?: string;
 
-    readonly label: string;
-    readonly processType: string;
+    readonly config?: TaskConfiguration;
 }
 
 export interface TaskClient {

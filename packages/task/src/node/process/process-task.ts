@@ -49,8 +49,7 @@ export class ProcessTask extends Task {
                     ctx: this.options.context,
                     code: event.code,
                     signal: event.signal,
-                    label: this.options.label,
-                    processType: this.options.processType
+                    config: this.options.config
                 });
             });
 
