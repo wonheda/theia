@@ -56,6 +56,15 @@
     padding-left: 4px;
 }
 
+.theia-view-container .p-SplitPanel[data-orientation='horizontal'] .part .header .theia-ExpansionToggle::before {
+    display: none;
+    padding-left: 0px;
+}
+
+.theia-view-container .p-SplitPanel[data-orientation='horizontal'] .part .header .theia-ExpansionToggle {
+    padding-left: 0px;
+}
+
 .theia-view-container .part .header .label {
     width: 100%;
     overflow: hidden;

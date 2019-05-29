@@ -365,16 +365,6 @@ export class ViewContainerPart extends BaseWidget {
         return new DisposableCollection(
             addEventListener(this.header, 'contextmenu', event => {
                 this.contextMenuEmitter.fire(event);
-            }),
-            addEventListener(this.body, 'contextmenu', event => {
-                // Just disabled the native menu.
-                if (event.button === 2) {
-                    // TODO: do now show the native context menu if the `body` is empty.
-                    // const { x, y } = event;
-                    // const element = document.elementFromPoint(x, y);
-                    // event.stopPropagation();
-                    // event.preventDefault();
-                }
             })
         );
     }
@@ -448,6 +438,10 @@ export class ViewContainerPart extends BaseWidget {
         const header = document.createElement('div');
         header.classList.add('theia-header', 'header');
         disposable.push(addEventListener(header, 'click', () => {
+            // Cannot collapse/expand if the orientation of the container is `horizontal`.
+            if (this.node.closest('#theia-main-content-panel') || this.node.closest('#theia-bottom-content-panel')) {
+                return;
+            }
             this._collapsed = !this._collapsed;
             this.body.style.display = this._collapsed ? 'none' : 'block';
             // tslint:disable-next-line:no-shadowed-variable
