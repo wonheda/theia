@@ -173,7 +173,7 @@ export class ViewContainerLayout extends SplitLayout {
         }
 
         const adjuster = this.createAdjuster();
-        const animations = adjuster.adjustHandlers(index);
+        const animations = adjuster.adjustHandles(index);
         for (const { handleIndex, position } of animations) {
             this.animateHandle(handleIndex, position);
         }
@@ -219,11 +219,11 @@ export namespace ViewContainerLayout {
 
         }
 
-        adjustHandlers(index: number): ReadonlyArray<Readonly<{ handleIndex: number, position: number }>> {
+        adjustHandles(index: number): ReadonlyArray<Readonly<{ handleIndex: number, position: number }>> {
             if (this.items[index].collapsed) {
                 const prevExpandedIndex = this.prevExpanded(index);
                 if (prevExpandedIndex !== -1) {
-                    const position = this.items[index].position - 2 - this.headerHeight;
+                    const position = this.items[index].position - this.headerHeight + this.handleHeight;
                     return [{ handleIndex: prevExpandedIndex, position }];
                 } else {
                     // TODO: check if `offsetHeight` is needed here or not.
@@ -266,7 +266,7 @@ export namespace ViewContainerLayout {
                     if (prevExpandedIndex !== -1) {
                         for (let i = handleIndex; i >= 0; i--) {
                             if (!this.items[i].collapsed) {
-                                const prevHandlePosition = i === 0 ? -1 : this.items[i].position;
+                                const prevHandlePosition = i === 0 ? -1 : this.items[i - 1].position;
                                 if (prevHandlePosition === -1) {
                                     break; // No more place above.
                                 }
@@ -290,6 +290,10 @@ export namespace ViewContainerLayout {
 
         protected get headerHeight(): number {
             return ViewContainerPart.HEADER_HEIGHT;
+        }
+
+        protected get handleHeight(): number {
+            return 2;
         }
 
         protected prevExpanded(from: number): number {
