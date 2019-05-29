@@ -43,10 +43,6 @@
     height: 100%;
 }
 
-.theia-view-container .body {
-    height: 100%;
-}
-
 .theia-view-container .part .header {
     cursor: pointer;
     display: flex;
@@ -54,6 +50,10 @@
     background: var(--theia-menu-color0);
     line-height: 22px;
     z-index: 10;
+}
+
+.theia-view-container .part .header .theia-ExpansionToggle {
+    padding-left: 4px;
 }
 
 .theia-view-container .part .header .label {
@@ -72,6 +72,11 @@
 
 .theia-view-container .part:hover .element {
     display: block;
+}
+
+.theia-view-container .body .theia-tree-source-node-placeholder {
+    padding-top: 4px;
+    height: 100%;
 }
 
 .theia-view-container .part:hover .body {

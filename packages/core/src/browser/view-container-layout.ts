@@ -22,7 +22,8 @@ import * as PQueue from 'p-queue';
 
 export class ViewContainerLayout extends SplitLayout {
 
-    protected readonly defaultSizes = new Map<Widget, number>();
+    protected readonly defaultHeights = new Map<Widget, number>();
+    protected readonly beforeCollapseHeights = new Map<Widget, number>();
     protected readonly animationQueue = new PQueue({ autoStart: true, concurrency: 1 });
 
     constructor(protected options: ViewContainerLayout.Options) {
@@ -59,45 +60,41 @@ export class ViewContainerLayout extends SplitLayout {
         return false;
     }
 
-    protected prevHandlePosition(index: number): number {
-        return index === 0 ? 0 : this.handles[index - 1].offsetTop;
+    protected minHeight(widget: Widget): number {
+        if (this.options.minHeight) {
+            return this.options.minHeight(widget);
+        }
+        if (widget instanceof ViewContainerPart) {
+            return widget.minHeight;
+        }
+        return 100;
     }
 
+    /**
+     * The last handle is always hidden, we cannot get the `offsetTop` of the `HTMLDivElement`.
+     * Instead, we get the `offsetHeight` of the parent `node`.
+     */
     protected handlePosition(index: number): number {
         return index === this.handles.length - 1
             ? this.parent!.node.offsetHeight
             : this.handles[index].offsetTop;
     }
 
-    protected prevExpandedIndex(fromIndex: number): number {
-        for (let i = fromIndex - 1; i >= 0; i--) {
-            if (!this.isCollapsed(this.items[i].widget)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    protected nextExpandedIndex(fromIndex: number): number {
-        const result = this.items.map(({ widget }) => widget).findIndex((widget, i) => i > fromIndex && !this.isCollapsed(widget));
-        return result === -1 ? this.items.length - 1 : result;
-    }
-
     protected onFitRequest(msg: Message): void {
         super.onFitRequest(msg);
         requestAnimationFrame(() => {
-            const relativeSizes = this.relativeSizes();
             for (let i = 0; i < this.items.length; i++) {
                 const { widget } = this.items[i];
-                if (!this.defaultSizes.has(widget)) {
-                    this.defaultSizes.set(widget, relativeSizes[i]);
+                const { offsetHeight } = widget.node;
+                if (!this.defaultHeights.has(widget)) {
+                    this.defaultHeights.set(widget, offsetHeight);
                 }
             }
         });
     }
 
     removeWidget(widget: Widget): void {
-        this.defaultSizes.delete(widget);
+        this.defaultHeights.delete(widget);
         super.removeWidget(widget);
     }
 
@@ -105,7 +102,7 @@ export class ViewContainerLayout extends SplitLayout {
         // tslint:disable-next-line:no-any
         const widget = (this as any)._widgets[index];
         if (widget) {
-            this.defaultSizes.delete(widget);
+            this.defaultHeights.delete(widget);
         }
         super.removeWidgetAt(index);
     }
@@ -161,79 +158,167 @@ export class ViewContainerLayout extends SplitLayout {
             return;
         }
 
-        if (!this.parent) {
-            return;
-        }
-
-        // TODO: `ViewContainerPart.HEADER_HEIGHT` should not be here.
         const { widget } = this.items[index];
         if (this.isCollapsed(widget)) {
-            const prevExpandedIndex = this.prevExpandedIndex(index);
-            if (prevExpandedIndex !== -1) {
-                const position = this.handlePosition(index) - this.handles[index].offsetHeight - ViewContainerPart.HEADER_HEIGHT;
-                this.animateHandle(prevExpandedIndex, position);
-            } else {
-                // TODO: check if `offsetHeight` is needed here or not.
-                // Collapse the 1. index.
-                const nextExpandedIndex = this.nextExpandedIndex(index);
-                const position = this.prevHandlePosition(index) + ((nextExpandedIndex - index) * ViewContainerPart.HEADER_HEIGHT);
-                this.animateHandle(Math.max(nextExpandedIndex - 1, 0), position);
-            }
-        } else {
-            const expandedItems = this.items.filter(item => !this.isCollapsed(item.widget));
-            // Expanding one item is special, as it has to stretch the entire available space.
-            // In this case we do not reuse any previously stored heights.
-            if (expandedItems.length === 1) {
-                const position = this.parent.node.clientHeight - ((this.items.length - 1 - index) * ViewContainerPart.HEADER_HEIGHT);
-                this.animateHandle(index, position);
-            } else {
-                // Poor man's solution if nothing else works.
-                // const relativeSizes = this.relativeSizes();
-                // let toNormalize = 1;
-                // for (let i = 0; i < this.items.length; i++) {
-                //     if (this.isCollapsed(this.items[i].widget)) {
-                //         toNormalize -= relativeSizes[i];
-                //     }
-                // }
-                // const ratio = toNormalize / expandedItems.length;
-                // const updatedRelativeSizes = relativeSizes.slice();
-                // for (let i = 0; i < this.items.length; i++) {
-                //     if (!this.isCollapsed(this.items[i].widget)) {
-                //         updatedRelativeSizes[i] = ratio;
-                //     }
-                // }
-                // this.setRelativeSizes(updatedRelativeSizes);
-
-                // This is another alternative. Same as above, but animates the handle moves after normalizing the item sizes.
-                const { items } = this;
-                const itemCount = items.length;
-                const { offsetHeight } = this.parent.node;
-                // The hint is without the header height.
-                const heightHint = (offsetHeight - (itemCount * ViewContainerPart.HEADER_HEIGHT)) / expandedItems.length;
-                // TODO: Here we should consider weights.
-                let prevHandlePosition = 0;
-                const animations: [number, number][] = [];
-                for (let i = 0; i < itemCount; i++) {
-                    if (this.isCollapsed(items[i].widget)) {
-                        prevHandlePosition += ViewContainerPart.HEADER_HEIGHT;
-                    } else {
-                        prevHandlePosition += (heightHint + ViewContainerPart.HEADER_HEIGHT);
-                    }
-                    animations.push([i, prevHandlePosition]);
-                }
-                for (const [handleIndex, position] of animations) {
-                    this.animateHandle(handleIndex, position);
-                }
-
-            }
+            this.beforeCollapseHeights.set(widget, widget.node.offsetHeight);
         }
 
+        const adjuster = this.createAdjuster();
+        console.log('ADJUSTER', JSON.stringify(adjuster));
+        const animations = adjuster.adjustHandlers(index);
+        for (const { handleIndex, position } of animations) {
+            this.animateHandle(handleIndex, position);
+        }
+
+    }
+
+    private createAdjuster(): ViewContainerLayout.HandleAdjuster {
+        if (!this.parent) {
+            return new ViewContainerLayout.NoopHandleAdjuster();
+        }
+        const fullHeight = this.parent.node.offsetHeight;
+        const items = this.handles.map((_, i) => ({
+            defaultHeight: this.defaultHeights.get(this.items[i].widget) || -1,
+            beforeCollapseHeight: this.beforeCollapseHeights.get(this.items[i].widget),
+            minHeight: this.minHeight(this.items[i].widget),
+            position: this.handlePosition(i),
+            collapsed: this.isCollapsed(this.items[i].widget)
+        }));
+        return new ViewContainerLayout.HandleAdjuster(fullHeight, items);
     }
 
 }
 
 export namespace ViewContainerLayout {
+
     export interface Options extends SplitLayout.IOptions {
         isCollapsed?(widget: Widget): boolean;
+        minHeight?(widget: Widget): number;
     }
+
+    export class HandleAdjuster {
+
+        constructor(
+            readonly fullHeight: number,
+            readonly items: ReadonlyArray<Readonly<{
+                defaultHeight: number,
+                beforeCollapseHeight?: number,
+                minHeight: number,
+                position: number,
+                collapsed: boolean
+            }>>
+        ) {
+
+        }
+
+        adjustHandlers(index: number): ReadonlyArray<Readonly<{ handleIndex: number, position: number }>> {
+            if (this.items[index].collapsed) {
+                const prevExpandedIndex = this.prevExpanded(index);
+                if (prevExpandedIndex !== -1) {
+                    const position = this.items[index].position - 2 - this.headerHeight;
+                    return [{ handleIndex: prevExpandedIndex, position }];
+                } else {
+                    // TODO: check if `offsetHeight` is needed here or not.
+                    // Collapse the 1. index.
+                    const nextExpandedIndex = this.nextExpanded(index);
+                    const position = (index === 0 ? 0 : this.items[index - 1].position) + ((nextExpandedIndex - index) * this.headerHeight);
+                    return [{ handleIndex: Math.max(nextExpandedIndex - 1, 0), position }];
+                }
+            } else {
+                const animations: Array<{ handleIndex: number, position: number }> = [];
+                const expandedItems = this.items.filter(item => !item.collapsed);
+                if (expandedItems.length === 1) {
+                    const position = this.fullHeight - ((this.items.length - 1 - index) * this.headerHeight);
+                    animations.push({ handleIndex: index, position });
+                } else {
+                    let heightHint = this.items[index].beforeCollapseHeight;
+                    if (heightHint === undefined || heightHint <= this.headerHeight) {
+                        heightHint = this.items[index].defaultHeight;
+                    }
+                    if (heightHint < this.items[index].minHeight) {
+                        heightHint = this.items[index].minHeight;
+                    }
+                    // Can we use the space above?
+                    // We can if there is a previous open part which can shrink.
+                    // TODO: check previous' current and minSize too.
+                    const prevExpandedIndex = this.prevExpanded(index);
+                    if (prevExpandedIndex !== -1) {
+                        animations.push({
+                            handleIndex: index - 1,
+                            position: this.items[index].position - heightHint
+                        });
+                    } else {
+                        animations.push({
+                            handleIndex: index,
+                            position: this.items[index].position + heightHint - this.headerHeight
+                        });
+                    }
+
+                    const prevHandlePos = (i: number) => i === 0 ? -1 : this.items[i - 1].position;
+
+                    // Check whether the required adjustment interferes with the desired heights of any other parts.
+                    const { handleIndex } = animations[0];
+                    if (prevExpandedIndex !== -1) {
+                        // Check above.
+                        for (let i = handleIndex; i >= 0; i--) {
+                            if (!this.items[i].collapsed) {
+                                const prevHandlePosition = prevHandlePos(i);
+                                if (prevHandlePosition === -1) {
+                                    break; // Cannot adjust hight above;
+                                }
+                                const newHeight = animations[animations.length - 1].position - prevHandlePosition;
+                                if (newHeight < this.items[i].minHeight) {
+                                    animations.push({
+                                        handleIndex: i - 1,
+                                        position: animations[animations.length - 1].position - (this.items[i].minHeight + this.headerHeight)
+                                    });
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // Check below.
+                    }
+                }
+                return animations;
+            }
+        }
+
+        protected get headerHeight(): number {
+            return ViewContainerPart.HEADER_HEIGHT;
+        }
+
+        protected prevExpanded(from: number): number {
+            for (let i = from - 1; i >= 0; i--) {
+                if (!this.items[i].collapsed) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        protected nextExpanded(from: number): number {
+            for (let i = from + 1; i < this.items.length; i++) {
+                if (!this.items[i].collapsed) {
+                    return i;
+                }
+            }
+            return this.items.length - 1; // TODO: for consistency, -1 would be better.
+        }
+
+    }
+
+    export class NoopHandleAdjuster extends HandleAdjuster {
+
+        constructor() {
+            super(0, []);
+        }
+
+        toggleCollapsed() {
+            return [];
+        }
+
+    }
+
 }

@@ -80,7 +80,7 @@ export class ViewContainer extends BaseWidget implements ApplicationShell.Tracka
         if (widgets.indexOf(widget) !== -1) {
             return Disposable.NULL;
         }
-        const newPart = new ViewContainerPart(widget, this.id, { collapsed: false }); // TODO: `collapsed`.
+        const newPart = new ViewContainerPart(widget, this.id, { collapsed: false, minHeight: 100 }); // TODO: propagate the `options` to the parts.
         this.registerPart(newPart);
         this.layout.addWidget(newPart);
         // this.update();
@@ -295,6 +295,7 @@ export class ViewContainerPart extends BaseWidget {
      */
     static HEADER_HEIGHT = 22;
 
+    readonly minHeight: number;
     protected readonly header: HTMLElement;
     protected readonly body: HTMLElement;
     protected readonly collapsedEmitter = new Emitter<boolean>();
@@ -312,12 +313,13 @@ export class ViewContainerPart extends BaseWidget {
     constructor(
         public readonly wrapped: Widget,
         protected readonly viewContainerId: string,
-        { collapsed }: { collapsed: boolean } = { collapsed: false }) {
+        { collapsed, minHeight }: { collapsed: boolean, minHeight: number } = { collapsed: false, minHeight: 100 }) {
 
         super();
         this.id = `${this.viewContainerId}--${wrapped.id}`;
         this.addClass('part');
         this._collapsed = collapsed;
+        this.minHeight = minHeight;
         const { header, body, disposable } = this.createContent();
         this.header = header;
         this.body = body;
