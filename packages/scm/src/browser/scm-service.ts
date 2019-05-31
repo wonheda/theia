@@ -27,7 +27,7 @@ export interface ScmProvider extends Disposable {
 
     readonly onDidChangeResources: Event<void>;
 
-    readonly rootUri?: string;
+    readonly rootUri: string;
     readonly onDidChangeCommitTemplate?: Event<string>;
     readonly onDidChangeStatusBarCommands?: Event<ScmCommand[]>;
     readonly acceptInputCommand?: ScmCommand;
@@ -119,6 +119,10 @@ export class ScmService {
     readonly onDidChangeSelectedRepositories: Event<ScmRepository | undefined> = this.onDidChangeSelectedRepositoriesEmitter.event;
 
     constructor() {
+        this.initialize();
+    }
+
+    protected async initialize(): Promise<void> {
         this.disposableCollection.push(this.onDidChangeSelectedRepositoriesEmitter);
         this.disposableCollection.push(this.onDidAddProviderEmitter);
         this.disposableCollection.push(this.onDidRemoveProviderEmitter);
